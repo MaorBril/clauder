@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "clauder": {
+      "command": "/Users/maor.bril/code/hacks/clauder/clauder",
+      "args": [
+        "serve"
+      ]
+    }
+  }
+}
