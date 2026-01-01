@@ -14,7 +14,7 @@ import (
 const (
 	ProtocolVersion = "2024-11-05"
 	ServerName      = "clauder"
-	ServerVersion   = "0.1.0"
+	ServerVersion   = "0.1.0" // Keep in sync with cmd.Version
 )
 
 type Server struct {
@@ -334,5 +334,5 @@ func (s *Server) send(resp Response) {
 	if err != nil {
 		return
 	}
-	fmt.Fprintf(s.writer, "%s\n", data)
+	_, _ = fmt.Fprintf(s.writer, "%s\n", data)
 }

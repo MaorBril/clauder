@@ -22,7 +22,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open store: %w", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	workDir, err := os.Getwd()
 	if err != nil {
@@ -30,12 +30,23 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get facts stats
-	allFacts, _ := s.GetFacts("", nil, "", 0)
-	localFacts, _ := s.GetFacts("", nil, workDir, 0)
+	allFacts, err := s.GetFacts("", nil, "", 0)
+	if err != nil {
+		return fmt.Errorf("failed to get facts: %w", err)
+	}
+	localFacts, err := s.GetFacts("", nil, workDir, 0)
+	if err != nil {
+		return fmt.Errorf("failed to get local facts: %w", err)
+	}
 
 	// Get instances
-	s.CleanupStaleInstances(5 * time.Minute)
-	instances, _ := s.GetInstances()
+	if err := s.CleanupStaleInstances(5 * time.Minute); err != nil {
+		return fmt.Errorf("failed to cleanup stale instances: %w", err)
+	}
+	instances, err := s.GetInstances()
+	if err != nil {
+		return fmt.Errorf("failed to get instances: %w", err)
+	}
 
 	fmt.Println("Clauder Status")
 	fmt.Println("==============")

@@ -12,6 +12,12 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// Limits for query bounds
+const (
+	MaxLimit     = 1000
+	DefaultLimit = 100
+)
+
 type SQLiteStore struct {
 	db *sql.DB
 }
@@ -29,7 +35,7 @@ func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 
 	store := &SQLiteStore{db: db}
 	if err := store.migrate(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
@@ -90,6 +96,14 @@ func (s *SQLiteStore) migrate() error {
 	return err
 }
 
+// sanitizeFTSQuery escapes special FTS5 operators to prevent query injection
+func sanitizeFTSQuery(query string) string {
+	// Escape double quotes by doubling them
+	query = strings.ReplaceAll(query, `"`, `""`)
+	// Wrap the entire query in quotes to treat it as a phrase/literal
+	return `"` + query + `"`
+}
+
 // Facts
 
 func (s *SQLiteStore) AddFact(content string, tags []string, sourceDir string) (*Fact, error) {
@@ -133,7 +147,8 @@ func (s *SQLiteStore) GetFacts(query string, tags []string, sourceDir string, li
 
 	if query != "" {
 		baseQuery = "SELECT f.id, f.content, f.tags, f.source_dir, f.created_at, f.updated_at FROM facts f JOIN facts_fts fts ON f.id = fts.rowid WHERE fts.content MATCH ?"
-		args = append(args, query)
+		// Sanitize FTS query to prevent operator injection
+		args = append(args, sanitizeFTSQuery(query))
 	}
 
 	if sourceDir != "" {
@@ -143,8 +158,10 @@ func (s *SQLiteStore) GetFacts(query string, tags []string, sourceDir string, li
 
 	if len(tags) > 0 {
 		for _, tag := range tags {
+			// Escape any quotes in tag for LIKE pattern safety
+			safeTag := strings.ReplaceAll(tag, `"`, `""`)
 			conditions = append(conditions, "f.tags LIKE ?")
-			args = append(args, "%\""+tag+"\"%")
+			args = append(args, "%\""+safeTag+"\"%")
 		}
 	}
 
@@ -158,15 +175,19 @@ func (s *SQLiteStore) GetFacts(query string, tags []string, sourceDir string, li
 
 	baseQuery += " ORDER BY f.updated_at DESC"
 
-	if limit > 0 {
-		baseQuery += fmt.Sprintf(" LIMIT %d", limit)
+	// Apply limit bounds
+	if limit <= 0 {
+		limit = DefaultLimit
+	} else if limit > MaxLimit {
+		limit = MaxLimit
 	}
+	baseQuery += fmt.Sprintf(" LIMIT %d", limit)
 
 	rows, err := s.db.Query(baseQuery, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var facts []Fact
 	for rows.Next() {
@@ -175,7 +196,10 @@ func (s *SQLiteStore) GetFacts(query string, tags []string, sourceDir string, li
 		if err := rows.Scan(&f.ID, &f.Content, &tagsJSON, &f.SourceDir, &f.CreatedAt, &f.UpdatedAt); err != nil {
 			return nil, err
 		}
-		json.Unmarshal([]byte(tagsJSON), &f.Tags)
+		if err := json.Unmarshal([]byte(tagsJSON), &f.Tags); err != nil {
+			// If tags are corrupted, initialize to empty slice
+			f.Tags = []string{}
+		}
 		facts = append(facts, f)
 	}
 
@@ -195,7 +219,10 @@ func (s *SQLiteStore) GetFactByID(id int64) (*Fact, error) {
 	if err != nil {
 		return nil, err
 	}
-	json.Unmarshal([]byte(tagsJSON), &f.Tags)
+	if err := json.Unmarshal([]byte(tagsJSON), &f.Tags); err != nil {
+		// If tags are corrupted, initialize to empty slice
+		f.Tags = []string{}
+	}
 	return &f, nil
 }
 
@@ -230,7 +257,7 @@ func (s *SQLiteStore) GetInstances() ([]Instance, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var instances []Instance
 	for rows.Next() {
@@ -301,7 +328,7 @@ func (s *SQLiteStore) GetMessages(toInstance string, unreadOnly bool) ([]Message
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var messages []Message
 	for rows.Next() {

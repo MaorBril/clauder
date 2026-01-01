@@ -22,7 +22,7 @@ func runSend(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open store: %w", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	to := args[0]
 	content := strings.Join(args[1:], " ")

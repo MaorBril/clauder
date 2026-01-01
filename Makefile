@@ -1,7 +1,7 @@
 BINARY_NAME=clauder
 BUILD_TAGS=fts5
 
-.PHONY: build install clean test run
+.PHONY: build install clean test run format lint
 
 build:
 	go build -tags "$(BUILD_TAGS)" -o $(BINARY_NAME) .
@@ -18,6 +18,14 @@ clean:
 
 test:
 	go test -tags "$(BUILD_TAGS)" ./...
+
+format:
+	gofmt -w -s .
+	go mod tidy
+
+lint:
+	go vet -tags "$(BUILD_TAGS)" ./...
+	golangci-lint run --build-tags "$(BUILD_TAGS)"
 
 run: build
 	./$(BINARY_NAME)

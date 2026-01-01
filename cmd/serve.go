@@ -27,14 +27,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open store: %w", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	workDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	instanceID := uuid.New().String()[:8]
+	instanceID := uuid.New().String()
 
 	// Register this instance
 	if err := s.RegisterInstance(instanceID, os.Getpid(), workDir); err != nil {
@@ -50,7 +50,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	go func() {
 		<-sigChan
-		s.UnregisterInstance(instanceID)
+		_ = s.UnregisterInstance(instanceID)
 		cancel()
 		os.Exit(0)
 	}()
@@ -64,7 +64,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.Heartbeat(instanceID)
+				_ = s.Heartbeat(instanceID)
 			}
 		}
 	}()
@@ -72,10 +72,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Run MCP server
 	server := mcp.NewServer(s, instanceID, workDir)
 	if err := server.Run(); err != nil {
-		s.UnregisterInstance(instanceID)
+		_ = s.UnregisterInstance(instanceID)
 		return err
 	}
 
-	s.UnregisterInstance(instanceID)
+	_ = s.UnregisterInstance(instanceID)
 	return nil
 }

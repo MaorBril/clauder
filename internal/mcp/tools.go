@@ -1,10 +1,17 @@
 package mcp
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
+)
+
+// Size limits for DoS prevention
+const (
+	MaxFactSize    = 1 << 20  // 1MB
+	MaxMessageSize = 64 << 10 // 64KB
+	MaxTagLength   = 256
+	MaxTagCount    = 50
 )
 
 func (s *Server) toolRemember(args map[string]interface{}) ToolResult {
@@ -13,10 +20,20 @@ func (s *Server) toolRemember(args map[string]interface{}) ToolResult {
 		return errorResult("fact is required")
 	}
 
+	if len(fact) > MaxFactSize {
+		return errorResult(fmt.Sprintf("fact exceeds maximum size of %d bytes", MaxFactSize))
+	}
+
 	var tags []string
 	if tagsRaw, ok := args["tags"].([]interface{}); ok {
+		if len(tagsRaw) > MaxTagCount {
+			return errorResult(fmt.Sprintf("too many tags (max %d)", MaxTagCount))
+		}
 		for _, t := range tagsRaw {
 			if tag, ok := t.(string); ok {
+				if len(tag) > MaxTagLength {
+					return errorResult(fmt.Sprintf("tag exceeds maximum length of %d", MaxTagLength))
+				}
 				tags = append(tags, tag)
 			}
 		}
@@ -144,7 +161,7 @@ func (s *Server) toolGetContext(args map[string]interface{}) ToolResult {
 
 func (s *Server) toolListInstances(args map[string]interface{}) ToolResult {
 	// Cleanup stale instances first
-	s.store.CleanupStaleInstances(5 * time.Minute)
+	_ = s.store.CleanupStaleInstances(5 * time.Minute)
 
 	instances, err := s.store.GetInstances()
 	if err != nil {
@@ -181,6 +198,10 @@ func (s *Server) toolSendMessage(args map[string]interface{}) ToolResult {
 	content, ok := args["content"].(string)
 	if !ok || content == "" {
 		return errorResult("'content' is required")
+	}
+
+	if len(content) > MaxMessageSize {
+		return errorResult(fmt.Sprintf("message exceeds maximum size of %d bytes", MaxMessageSize))
 	}
 
 	// Check if target instance exists
@@ -232,7 +253,10 @@ func (s *Server) toolGetMessages(args map[string]interface{}) ToolResult {
 
 		// Mark as read
 		if m.ReadAt == nil {
-			s.store.MarkMessageRead(m.ID)
+			if err := s.store.MarkMessageRead(m.ID); err != nil {
+				// Log error but don't fail the entire operation
+				sb.WriteString(fmt.Sprintf("  (warning: failed to mark as read: %v)\n", err))
+			}
 		}
 	}
 
@@ -252,14 +276,6 @@ func errorResult(msg string) ToolResult {
 		Content: []ContentBlock{{Type: "text", Text: msg}},
 		IsError: true,
 	}
-}
-
-func jsonResult(v interface{}) ToolResult {
-	data, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return errorResult(fmt.Sprintf("failed to marshal result: %v", err))
-	}
-	return textResult(string(data))
 }
 
 func truncate(s string, maxLen int) string {

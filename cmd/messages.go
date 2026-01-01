@@ -27,7 +27,7 @@ func runMessages(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open store: %w", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	instanceID := args[0]
 	unreadOnly := !messagesAll

@@ -21,10 +21,10 @@ func runInstances(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open store: %w", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Cleanup stale instances
-	s.CleanupStaleInstances(5 * time.Minute)
+	_ = s.CleanupStaleInstances(5 * time.Minute)
 
 	instances, err := s.GetInstances()
 	if err != nil {
