@@ -1,18 +1,22 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	setupGlobal  bool
-	setupProject bool
+	setupGlobal     bool
+	setupProject    bool
+	setupAllowAll   bool
+	setupSkipClaude bool
 )
 
 var setupCmd = &cobra.Command{
@@ -28,6 +32,8 @@ Use --project to add to .mcp.json in current directory instead.`,
 func init() {
 	setupCmd.Flags().BoolVarP(&setupGlobal, "global", "g", false, "Add to global Claude config (~/.claude.json)")
 	setupCmd.Flags().BoolVarP(&setupProject, "project", "p", false, "Add to project config (.mcp.json)")
+	setupCmd.Flags().BoolVarP(&setupAllowAll, "allow-all", "a", false, "Pre-approve all clauder commands (no permission prompts)")
+	setupCmd.Flags().BoolVar(&setupSkipClaude, "skip-claude-md", false, "Skip adding instructions to CLAUDE.md")
 }
 
 type MCPConfig struct {
@@ -58,10 +64,30 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		setupGlobal = true
 	}
 
-	if setupProject {
-		return setupProjectConfig(binaryPath)
+	// Ask about pre-approving commands if not specified via flag
+	if !setupAllowAll {
+		setupAllowAll = askYesNo("Pre-approve all clauder commands? (no permission prompts)")
 	}
-	return setupGlobalConfig(binaryPath)
+
+	// Setup MCP config
+	var configErr error
+	if setupProject {
+		configErr = setupProjectConfig(binaryPath)
+	} else {
+		configErr = setupGlobalConfig(binaryPath)
+	}
+	if configErr != nil {
+		return configErr
+	}
+
+	// Setup CLAUDE.md unless skipped
+	if !setupSkipClaude {
+		if err := setupClaudeMD(); err != nil {
+			fmt.Printf("Warning: failed to update CLAUDE.md: %v\n", err)
+		}
+	}
+
+	return nil
 }
 
 func getBinaryPath() (string, error) {
@@ -112,6 +138,11 @@ func setupGlobalConfig(binaryPath string) error {
 	}
 	config["mcpServers"] = mcpServers
 
+	// Add permission rules if user wants to pre-approve all commands
+	if setupAllowAll {
+		addPermissionRules(config)
+	}
+
 	// Write back
 	output, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
@@ -124,6 +155,9 @@ func setupGlobalConfig(binaryPath string) error {
 
 	fmt.Printf("Added clauder to %s\n", configPath)
 	fmt.Printf("Binary: %s\n", binaryPath)
+	if setupAllowAll {
+		fmt.Println("Pre-approved all clauder MCP commands.")
+	}
 	fmt.Println("\nRestart Claude Code to load the new MCP server.")
 	return nil
 }
@@ -167,5 +201,98 @@ func setupProjectConfig(binaryPath string) error {
 	fmt.Printf("Added clauder to %s\n", configPath)
 	fmt.Printf("Binary: %s\n", binaryPath)
 	fmt.Println("\nRestart Claude Code to load the new MCP server.")
+	return nil
+}
+
+// askYesNo prompts the user with a yes/no question
+func askYesNo(question string) bool {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("%s [y/N]: ", question)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+	response = strings.TrimSpace(strings.ToLower(response))
+	return response == "y" || response == "yes"
+}
+
+// addPermissionRules adds MCP tool permissions to allow clauder commands without prompts
+func addPermissionRules(config map[string]interface{}) {
+	// Get or create permissions array
+	permissions, ok := config["permissions"].([]interface{})
+	if !ok {
+		permissions = []interface{}{}
+	}
+
+	// Clauder MCP tools to allow
+	clauderTools := []string{
+		"mcp__clauder__remember",
+		"mcp__clauder__recall",
+		"mcp__clauder__get_context",
+		"mcp__clauder__list_instances",
+		"mcp__clauder__send_message",
+		"mcp__clauder__get_messages",
+	}
+
+	// Add permission rules for each tool
+	for _, tool := range clauderTools {
+		rule := map[string]interface{}{
+			"tool":  tool,
+			"allow": true,
+		}
+		permissions = append(permissions, rule)
+	}
+
+	config["permissions"] = permissions
+}
+
+// setupClaudeMD adds clauder instructions to CLAUDE.md
+func setupClaudeMD() error {
+	claudeMDPath := "CLAUDE.md"
+
+	clauderInstructions := `
+## Clauder - Persistent Memory MCP
+
+This project uses **clauder** for persistent memory across Claude Code sessions.
+
+### Available Tools
+- **mcp__clauder__remember**: Store facts, decisions, or context
+- **mcp__clauder__recall**: Search and retrieve stored facts
+- **mcp__clauder__get_context**: Load all relevant context for this directory
+- **mcp__clauder__list_instances**: List other running Claude Code sessions
+- **mcp__clauder__send_message**: Send messages to other instances
+- **mcp__clauder__get_messages**: Check for incoming messages
+
+### Usage Guidelines
+1. **At session start**: Call ` + "`get_context`" + ` to load persistent memory
+2. **Store important info**: Use ` + "`remember`" + ` for decisions, architecture notes, preferences
+3. **Periodic message check**: Call ` + "`get_messages`" + ` periodically to check for messages from other instances
+4. **Cross-instance communication**: Use ` + "`list_instances`" + ` and ` + "`send_message`" + ` to coordinate with other sessions
+`
+
+	// Read existing CLAUDE.md or create new
+	var content string
+	data, err := os.ReadFile(claudeMDPath)
+	if err == nil {
+		content = string(data)
+		// Check if clauder section already exists
+		if strings.Contains(content, "## Clauder - Persistent Memory MCP") {
+			fmt.Println("CLAUDE.md already contains clauder instructions.")
+			return nil
+		}
+		// Append to existing content
+		content = content + "\n" + clauderInstructions
+	} else if os.IsNotExist(err) {
+		// Create new file
+		content = "# Project Instructions\n" + clauderInstructions
+	} else {
+		return fmt.Errorf("failed to read CLAUDE.md: %w", err)
+	}
+
+	if err := os.WriteFile(claudeMDPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write CLAUDE.md: %w", err)
+	}
+
+	fmt.Printf("Added clauder instructions to %s\n", claudeMDPath)
 	return nil
 }
