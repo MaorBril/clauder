@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	toml "github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
 )
 
@@ -16,18 +17,24 @@ var (
 	setupGlobal     bool
 	setupProject    bool
 	setupOpencode   bool
+	setupCodex      bool
+	setupGemini     bool
 	setupAllowAll   bool
 	setupSkipClaude bool
 )
 
 var setupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Add clauder to Claude Code or OpenCode MCP configuration",
-	Long: `Adds clauder as an MCP server to Claude Code or OpenCode configuration.
+	Short: "Add clauder MCP server to AI coding tools",
+	Long: `Adds clauder as an MCP server to various AI coding tool configurations.
 
 By default, adds to the global Claude Code config (~/.claude.json).
-Use --project to add to .mcp.json in current directory instead.
-Use --opencode to add to opencode.json for OpenCode integration.`,
+
+Supported tools:
+  --project   Claude Code project config (.mcp.json)
+  --opencode  OpenCode (opencode.json)
+  --codex     OpenAI Codex CLI (~/.codex/config.toml)
+  --gemini    Google Gemini CLI (~/.gemini/settings.json)`,
 	RunE: runSetup,
 }
 
@@ -35,6 +42,8 @@ func init() {
 	setupCmd.Flags().BoolVarP(&setupGlobal, "global", "g", false, "Add to global Claude config (~/.claude.json)")
 	setupCmd.Flags().BoolVarP(&setupProject, "project", "p", false, "Add to project config (.mcp.json)")
 	setupCmd.Flags().BoolVarP(&setupOpencode, "opencode", "o", false, "Add to OpenCode config (opencode.json)")
+	setupCmd.Flags().BoolVar(&setupCodex, "codex", false, "Add to OpenAI Codex config (~/.codex/config.toml)")
+	setupCmd.Flags().BoolVar(&setupGemini, "gemini", false, "Add to Google Gemini CLI config (~/.gemini/settings.json)")
 	setupCmd.Flags().BoolVarP(&setupAllowAll, "allow-all", "a", false, "Pre-approve all clauder commands (no permission prompts)")
 	setupCmd.Flags().BoolVar(&setupSkipClaude, "skip-claude-md", false, "Skip adding instructions to CLAUDE.md")
 }
@@ -62,14 +71,20 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	// Determine which config file to use
-	if !setupGlobal && !setupProject && !setupOpencode {
+	if !setupGlobal && !setupProject && !setupOpencode && !setupCodex && !setupGemini {
 		// Default to global
 		setupGlobal = true
 	}
 
-	// OpenCode setup is simpler - doesn't need permission prompts or CLAUDE.md
+	// Handle non-Claude Code setups (simpler - no permission prompts or CLAUDE.md)
 	if setupOpencode {
 		return setupOpencodeConfig(binaryPath)
+	}
+	if setupCodex {
+		return setupCodexConfig(binaryPath)
+	}
+	if setupGemini {
+		return setupGeminiConfig(binaryPath)
 	}
 
 	// Ask about pre-approving commands if not specified via flag
@@ -259,6 +274,116 @@ func setupOpencodeConfig(binaryPath string) error {
 	fmt.Printf("Added clauder to %s\n", configPath)
 	fmt.Printf("Binary: %s\n", binaryPath)
 	fmt.Println("\nRestart OpenCode to load the new MCP server.")
+	return nil
+}
+
+func setupCodexConfig(binaryPath string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	configDir := filepath.Join(home, ".codex")
+	configPath := filepath.Join(configDir, "config.toml")
+
+	// Create .codex directory if it doesn't exist
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Read existing config or create new one
+	config := make(map[string]interface{})
+
+	data, err := os.ReadFile(configPath)
+	if err == nil {
+		if err := toml.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("failed to parse existing config: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	// Get or create mcp_servers section
+	mcpServers, ok := config["mcp_servers"].(map[string]interface{})
+	if !ok {
+		mcpServers = make(map[string]interface{})
+	}
+
+	// Add clauder with Codex's format
+	mcpServers["clauder"] = map[string]interface{}{
+		"command": binaryPath,
+		"args":    []string{"serve"},
+	}
+	config["mcp_servers"] = mcpServers
+
+	// Write back with TOML formatting
+	output, err := toml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, output, 0644); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	fmt.Printf("Added clauder to %s\n", configPath)
+	fmt.Printf("Binary: %s\n", binaryPath)
+	fmt.Println("\nRestart Codex to load the new MCP server.")
+	return nil
+}
+
+func setupGeminiConfig(binaryPath string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	configDir := filepath.Join(home, ".gemini")
+	configPath := filepath.Join(configDir, "settings.json")
+
+	// Create .gemini directory if it doesn't exist
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Read existing config or create new one
+	config := make(map[string]interface{})
+
+	data, err := os.ReadFile(configPath)
+	if err == nil {
+		if err := json.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("failed to parse existing config: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	// Get or create mcpServers section
+	mcpServers, ok := config["mcpServers"].(map[string]interface{})
+	if !ok {
+		mcpServers = make(map[string]interface{})
+	}
+
+	// Add clauder with Gemini CLI's format
+	mcpServers["clauder"] = map[string]interface{}{
+		"command": binaryPath,
+		"args":    []string{"serve"},
+	}
+	config["mcpServers"] = mcpServers
+
+	// Write back with pretty formatting
+	output, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, output, 0644); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	fmt.Printf("Added clauder to %s\n", configPath)
+	fmt.Printf("Binary: %s\n", binaryPath)
+	fmt.Println("\nRestart Gemini CLI to load the new MCP server.")
 	return nil
 }
 

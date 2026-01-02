@@ -1,6 +1,8 @@
 # Clauder
 
-An MCP server that provides Claude Code and OpenCode with persistent memory and multi-instance communication.
+An MCP server that provides AI coding tools with persistent memory and multi-instance communication.
+
+Supports: Claude Code, OpenCode, OpenAI Codex CLI, and Google Gemini CLI.
 
 ## Features
 
@@ -43,6 +45,26 @@ clauder setup --opencode
 ```
 
 This creates an `opencode.json` in your project directory with the MCP configuration.
+
+### OpenAI Codex CLI
+
+For [Codex CLI](https://github.com/openai/codex):
+
+```bash
+clauder setup --codex
+```
+
+This adds clauder to `~/.codex/config.toml`.
+
+### Google Gemini CLI
+
+For [Gemini CLI](https://github.com/google-gemini/gemini-cli):
+
+```bash
+clauder setup --gemini
+```
+
+This adds clauder to `~/.gemini/settings.json`.
 
 ## Usage
 
