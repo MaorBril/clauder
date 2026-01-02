@@ -2,7 +2,12 @@ name: Release
 
 on:
   release:
-    types: [created]
+    types: [created, published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v0.2)'
+        required: true
 
 permissions:
   contents: write
@@ -49,9 +54,10 @@ jobs:
       - name: Upload release asset
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
         run: |
           OUTPUT_NAME="clauder-${{ matrix.goos }}-${{ matrix.goarch }}"
           if [ "${{ matrix.goos }}" = "windows" ]; then
             OUTPUT_NAME="${OUTPUT_NAME}.exe"
           fi
-          gh release upload "${{ github.event.release.tag_name }}" "${OUTPUT_NAME}" --clobber
+          gh release upload "${TAG}" "${OUTPUT_NAME}" --clobber
