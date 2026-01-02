@@ -1,6 +1,6 @@
 # Clauder
 
-An MCP server that provides Claude Code with persistent memory and multi-instance communication.
+An MCP server that provides Claude Code and OpenCode with persistent memory and multi-instance communication.
 
 ## Features
 
@@ -24,6 +24,8 @@ make build
 
 ## Setup
 
+### Claude Code
+
 Run the setup command to configure Claude Code to use Clauder:
 
 ```bash
@@ -31,6 +33,16 @@ clauder setup
 ```
 
 This will add the MCP server configuration to your Claude Code settings.
+
+### OpenCode
+
+Clauder also works with [OpenCode](https://opencode.ai). Run:
+
+```bash
+clauder setup --opencode
+```
+
+This creates an `opencode.json` in your project directory with the MCP configuration.
 
 ## Usage
 

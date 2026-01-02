@@ -15,23 +15,26 @@ import (
 var (
 	setupGlobal     bool
 	setupProject    bool
+	setupOpencode   bool
 	setupAllowAll   bool
 	setupSkipClaude bool
 )
 
 var setupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Add clauder to Claude Code MCP configuration",
-	Long: `Adds clauder as an MCP server to Claude Code configuration.
+	Short: "Add clauder to Claude Code or OpenCode MCP configuration",
+	Long: `Adds clauder as an MCP server to Claude Code or OpenCode configuration.
 
-By default, adds to the global config (~/.claude.json).
-Use --project to add to .mcp.json in current directory instead.`,
+By default, adds to the global Claude Code config (~/.claude.json).
+Use --project to add to .mcp.json in current directory instead.
+Use --opencode to add to opencode.json for OpenCode integration.`,
 	RunE: runSetup,
 }
 
 func init() {
 	setupCmd.Flags().BoolVarP(&setupGlobal, "global", "g", false, "Add to global Claude config (~/.claude.json)")
 	setupCmd.Flags().BoolVarP(&setupProject, "project", "p", false, "Add to project config (.mcp.json)")
+	setupCmd.Flags().BoolVarP(&setupOpencode, "opencode", "o", false, "Add to OpenCode config (opencode.json)")
 	setupCmd.Flags().BoolVarP(&setupAllowAll, "allow-all", "a", false, "Pre-approve all clauder commands (no permission prompts)")
 	setupCmd.Flags().BoolVar(&setupSkipClaude, "skip-claude-md", false, "Skip adding instructions to CLAUDE.md")
 }
@@ -59,9 +62,14 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	// Determine which config file to use
-	if !setupGlobal && !setupProject {
+	if !setupGlobal && !setupProject && !setupOpencode {
 		// Default to global
 		setupGlobal = true
+	}
+
+	// OpenCode setup is simpler - doesn't need permission prompts or CLAUDE.md
+	if setupOpencode {
+		return setupOpencodeConfig(binaryPath)
 	}
 
 	// Ask about pre-approving commands if not specified via flag
@@ -201,6 +209,56 @@ func setupProjectConfig(binaryPath string) error {
 	fmt.Printf("Added clauder to %s\n", configPath)
 	fmt.Printf("Binary: %s\n", binaryPath)
 	fmt.Println("\nRestart Claude Code to load the new MCP server.")
+	return nil
+}
+
+func setupOpencodeConfig(binaryPath string) error {
+	configPath := "opencode.json"
+
+	// Read existing config or create new one
+	config := make(map[string]interface{})
+
+	data, err := os.ReadFile(configPath)
+	if err == nil {
+		if err := json.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("failed to parse existing config: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	// Add schema if not present
+	if _, ok := config["$schema"]; !ok {
+		config["$schema"] = "https://opencode.ai/config.json"
+	}
+
+	// Get or create mcp section
+	mcp, ok := config["mcp"].(map[string]interface{})
+	if !ok {
+		mcp = make(map[string]interface{})
+	}
+
+	// Add clauder with OpenCode's format
+	mcp["clauder"] = map[string]interface{}{
+		"type":    "local",
+		"command": []string{binaryPath, "serve"},
+		"enabled": true,
+	}
+	config["mcp"] = mcp
+
+	// Write back with pretty formatting
+	output, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, output, 0644); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	fmt.Printf("Added clauder to %s\n", configPath)
+	fmt.Printf("Binary: %s\n", binaryPath)
+	fmt.Println("\nRestart OpenCode to load the new MCP server.")
 	return nil
 }
 
