@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/posthog/posthog-go"
 )
@@ -38,6 +39,7 @@ func Init() {
 		var err error
 		client, err = posthog.NewWithConfig(posthogAPIKey, posthog.Config{
 			Endpoint: posthogHost,
+			Interval: 5 * time.Second, // Flush every 5 seconds
 		})
 		if err != nil {
 			disabled = true
