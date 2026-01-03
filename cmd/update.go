@@ -15,7 +15,7 @@ import (
 
 const (
 	// Version is the current version of clauder
-	Version = "0.2.0"
+	Version = "0.3.0"
 
 	// GitHubOwner is the GitHub repository owner
 	GitHubOwner = "MaorBril"
