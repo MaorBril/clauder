@@ -14,11 +14,17 @@ Supports: Claude Code, OpenCode, OpenAI Codex CLI, and Google Gemini CLI.
 
 ### Quick Install (Recommended)
 
+**macOS / Linux:**
 ```bash
 curl -sSL https://raw.githubusercontent.com/MaorBril/clauder/main/install.sh | sh
 ```
 
-This auto-detects your OS/architecture and installs to `~/.local/bin`.
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/MaorBril/clauder/main/install.ps1 | iex
+```
+
+Installs to `~/.local/bin` (Unix) or `%LOCALAPPDATA%\clauder` (Windows).
 
 ### With Go
 
