@@ -18,6 +18,10 @@ var rootCmd = &cobra.Command{
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		telemetry.SetVersion(Version)
 		telemetry.Init()
+		// Track command usage (skip root command itself)
+		if cmd.Name() != "clauder" {
+			telemetry.TrackCommand(cmd.Name())
+		}
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		telemetry.Close()
