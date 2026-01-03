@@ -12,14 +12,36 @@ Supports: Claude Code, OpenCode, OpenAI Codex CLI, and Google Gemini CLI.
 
 ## Installation
 
+### Quick Install (Recommended)
+
 ```bash
-go install github.com/maorbril/clauder@latest
+curl -sSL https://raw.githubusercontent.com/MaorBril/clauder/main/install.sh | sh
 ```
 
-Or build from source:
+This auto-detects your OS/architecture and installs to `~/.local/bin`.
+
+### With Go
 
 ```bash
-git clone https://github.com/maorbril/clauder.git
+go install github.com/MaorBril/clauder@latest
+```
+
+### Manual Download
+
+Download the binary for your platform from [Releases](https://github.com/MaorBril/clauder/releases):
+
+| Platform | Binary |
+|----------|--------|
+| macOS (Apple Silicon) | `clauder-darwin-arm64` |
+| macOS (Intel) | `clauder-darwin-amd64` |
+| Linux (x64) | `clauder-linux-amd64` |
+| Linux (ARM64) | `clauder-linux-arm64` |
+| Windows (x64) | `clauder-windows-amd64.exe` |
+
+### Build from Source
+
+```bash
+git clone https://github.com/MaorBril/clauder.git
 cd clauder
 make build
 ```
