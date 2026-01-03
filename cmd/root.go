@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/maorbril/clauder/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -14,6 +15,13 @@ var rootCmd = &cobra.Command{
 - Persistent memory (facts, decisions, context) across sessions
 - Multi-instance discovery and messaging across directories
 - Automatic context injection based on working directory`,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		telemetry.SetVersion(Version)
+		telemetry.Init()
+	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		telemetry.Close()
+	},
 }
 
 func Execute() error {

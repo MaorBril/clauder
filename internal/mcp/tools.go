@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/maorbril/clauder/internal/telemetry"
 )
 
 // Size limits for DoS prevention
@@ -15,6 +17,7 @@ const (
 )
 
 func (s *Server) toolRemember(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("remember")
 	fact, ok := args["fact"].(string)
 	if !ok || fact == "" {
 		return errorResult("fact is required")
@@ -48,6 +51,7 @@ func (s *Server) toolRemember(args map[string]interface{}) ToolResult {
 }
 
 func (s *Server) toolRecall(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("recall")
 	query, _ := args["query"].(string)
 
 	var tags []string
@@ -94,6 +98,7 @@ func (s *Server) toolRecall(args map[string]interface{}) ToolResult {
 }
 
 func (s *Server) toolGetContext(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("get_context")
 	// Get facts from current directory
 	localFacts, err := s.store.GetFacts("", nil, s.workDir, 50)
 	if err != nil {
@@ -160,6 +165,7 @@ func (s *Server) toolGetContext(args map[string]interface{}) ToolResult {
 }
 
 func (s *Server) toolListInstances(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("list_instances")
 	// Cleanup stale instances first
 	_ = s.store.CleanupStaleInstances(5 * time.Minute)
 
@@ -190,6 +196,7 @@ func (s *Server) toolListInstances(args map[string]interface{}) ToolResult {
 }
 
 func (s *Server) toolSendMessage(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("send_message")
 	to, ok := args["to"].(string)
 	if !ok || to == "" {
 		return errorResult("'to' instance ID is required")
@@ -222,6 +229,7 @@ func (s *Server) toolSendMessage(args map[string]interface{}) ToolResult {
 }
 
 func (s *Server) toolGetMessages(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("get_messages")
 	unreadOnly := true
 	if val, ok := args["unread_only"].(bool); ok {
 		unreadOnly = val

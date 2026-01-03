@@ -130,6 +130,22 @@ clauder serve
 
 All data is stored in `~/.clauder/` directory using SQLite.
 
+## Telemetry
+
+Clauder collects anonymous usage data to help improve the tool. This includes:
+- OS and architecture
+- Commands and features used (not content)
+- Version information
+
+**No personal data, file contents, or facts are ever collected.**
+
+To opt out, set one of these environment variables:
+```bash
+export CLAUDER_NO_TELEMETRY=1
+# or
+export DO_NOT_TRACK=1
+```
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.

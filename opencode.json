@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "clauder": {
+      "command": [
+        "/usr/local/bin/clauder",
+        "serve"
+      ],
+      "enabled": true,
+      "type": "local"
+    }
+  }
+}

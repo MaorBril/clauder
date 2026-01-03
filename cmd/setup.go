@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/maorbril/clauder/internal/telemetry"
 	toml "github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
 )
@@ -78,12 +79,15 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 	// Handle non-Claude Code setups (simpler - no permission prompts or CLAUDE.md)
 	if setupOpencode {
+		telemetry.TrackSetup("opencode")
 		return setupOpencodeConfig(binaryPath)
 	}
 	if setupCodex {
+		telemetry.TrackSetup("codex")
 		return setupCodexConfig(binaryPath)
 	}
 	if setupGemini {
+		telemetry.TrackSetup("gemini")
 		return setupGeminiConfig(binaryPath)
 	}
 
@@ -95,8 +99,10 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	// Setup MCP config
 	var configErr error
 	if setupProject {
+		telemetry.TrackSetup("claude-code-project")
 		configErr = setupProjectConfig(binaryPath)
 	} else {
+		telemetry.TrackSetup("claude-code-global")
 		configErr = setupGlobalConfig(binaryPath)
 	}
 	if configErr != nil {
