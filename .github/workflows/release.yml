@@ -6,30 +6,19 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g., v0.2)'
+        description: 'Release tag (e.g., v0.4.0)'
         required: true
 
 permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build binaries
-    runs-on: ubuntu-latest
+  build-darwin:
+    name: Build macOS binaries
+    runs-on: macos-latest
     strategy:
       matrix:
-        include:
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: windows
-            goarch: amd64
-
+        goarch: [amd64, arm64]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -41,23 +30,83 @@ jobs:
 
       - name: Build binary
         env:
-          GOOS: ${{ matrix.goos }}
+          GOOS: darwin
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: '0'
+          CGO_ENABLED: '1'
         run: |
-          OUTPUT_NAME="clauder-${{ matrix.goos }}-${{ matrix.goarch }}"
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            OUTPUT_NAME="${OUTPUT_NAME}.exe"
-          fi
-          go build -ldflags="-s -w" -o "${OUTPUT_NAME}" .
+          go build -tags fts5 -ldflags="-s -w" -o "clauder-darwin-${{ matrix.goarch }}" .
 
       - name: Upload release asset
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
         run: |
-          OUTPUT_NAME="clauder-${{ matrix.goos }}-${{ matrix.goarch }}"
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            OUTPUT_NAME="${OUTPUT_NAME}.exe"
-          fi
-          gh release upload "${TAG}" "${OUTPUT_NAME}" --clobber
+          gh release upload "${TAG}" "clauder-darwin-${{ matrix.goarch }}" --clobber
+
+  build-linux:
+    name: Build Linux binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goarch: amd64
+            cc: gcc
+          - goarch: arm64
+            cc: aarch64-linux-gnu-gcc
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Install cross-compiler
+        if: matrix.goarch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build binary
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
+          CC: ${{ matrix.cc }}
+        run: |
+          go build -tags fts5 -ldflags="-s -w" -o "clauder-linux-${{ matrix.goarch }}" .
+
+      - name: Upload release asset
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+        run: |
+          gh release upload "${TAG}" "clauder-linux-${{ matrix.goarch }}" --clobber
+
+  build-windows:
+    name: Build Windows binary
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build binary
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: '1'
+        run: |
+          go build -tags fts5 -ldflags="-s -w" -o "clauder-windows-amd64.exe" .
+
+      - name: Upload release asset
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+        run: |
+          gh release upload "${TAG}" "clauder-windows-amd64.exe" --clobber

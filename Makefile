@@ -4,7 +4,7 @@ BUILD_TAGS=fts5
 .PHONY: build install clean test run format lint
 
 build:
-	go build -tags "$(BUILD_TAGS)" -o $(BINARY_NAME) .
+	CGO_ENABLED=1 go build -tags "$(BUILD_TAGS)" -o $(BINARY_NAME) .
 
 install: build
 	cp $(BINARY_NAME) ~/.bin/$(BINARY_NAME)
@@ -17,15 +17,15 @@ clean:
 	go clean
 
 test:
-	go test -tags "$(BUILD_TAGS)" ./...
+	CGO_ENABLED=1 go test -tags "$(BUILD_TAGS)" ./...
 
 format:
 	gofmt -w -s .
 	go mod tidy
 
 lint:
-	go vet -tags "$(BUILD_TAGS)" ./...
-	golangci-lint run --build-tags "$(BUILD_TAGS)"
+	CGO_ENABLED=1 go vet -tags "$(BUILD_TAGS)" ./...
+	CGO_ENABLED=1 golangci-lint run --build-tags "$(BUILD_TAGS)"
 
 run: build
 	./$(BINARY_NAME)

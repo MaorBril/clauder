@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // Limits for query bounds
@@ -28,7 +28,7 @@ func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 	}
 
 	dbPath := filepath.Join(dataDir, "clauder.db")
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
