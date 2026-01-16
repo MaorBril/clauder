@@ -7,6 +7,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.min.js"></script>
     <style>
         :root {
             --primary: #8B5CF6;
@@ -268,6 +272,11 @@
         .btn-secondary:hover {
             background: var(--bg-card-hover);
             border-color: var(--border-light);
+        }
+
+        .btn-sm {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.8125rem;
         }
 
         /* Filter Bar */
@@ -1052,6 +1061,237 @@
             overflow-y: auto;
         }
 
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+
+        .launch-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text);
+            font-size: 0.875rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .launch-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+        }
+
+        .quick-launch-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .quick-launch-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .quick-launch-item:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--primary);
+        }
+
+        .quick-launch-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--bg-card-hover);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+
+        .quick-launch-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .quick-launch-name {
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: var(--text);
+        }
+
+        .quick-launch-path {
+            font-size: 0.75rem;
+            color: var(--muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Terminal */
+        .terminal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 200;
+            padding: 1rem;
+            justify-content: center;
+        }
+
+        .terminal-overlay.active {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .terminal-wrapper {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            max-width: 1200px;
+            height: 100%;
+        }
+
+        .terminal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            background: var(--bg-card);
+            border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+            border: 1px solid var(--border);
+            border-bottom: none;
+        }
+
+        .terminal-title {
+            font-weight: 600;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .terminal-title-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse-dot 1.5s ease-in-out infinite;
+        }
+
+        .terminal-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .terminal-btn {
+            background: none;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 1.25rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: var(--radius-sm);
+            transition: all 0.2s ease;
+        }
+
+        .terminal-btn:hover {
+            color: var(--text);
+            background: var(--bg-card-hover);
+        }
+
+        .terminal-container {
+            flex: 1;
+            background: #0d1117;
+            border: 1px solid var(--border);
+            border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+            overflow: hidden;
+        }
+
+        .terminal-container .xterm {
+            height: 100%;
+            padding: 0.5rem;
+        }
+
+        /* Minimized terminals tray */
+        .terminals-tray {
+            display: none;
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            flex-direction: column;
+            gap: 0.5rem;
+            z-index: 150;
+        }
+
+        .terminals-tray.active {
+            display: flex;
+        }
+
+        .terminal-minimized {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 0.625rem 1rem;
+            cursor: pointer;
+            box-shadow: var(--shadow-lg);
+            transition: all 0.2s ease;
+        }
+
+        .terminal-minimized:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--primary);
+            transform: translateX(-4px);
+        }
+
+        .terminal-minimized-dot {
+            width: 10px;
+            height: 10px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse-dot 1.5s ease-in-out infinite;
+        }
+
+        .terminal-minimized-text {
+            font-weight: 500;
+            font-size: 0.875rem;
+            flex: 1;
+        }
+
+        .terminal-minimized-close {
+            color: var(--muted);
+            font-size: 1rem;
+            padding: 0 0.25rem;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        .terminal-minimized-close:hover {
+            color: var(--error);
+            background: rgba(239, 68, 68, 0.1);
+        }
+
         .modal-messages {
             display: flex;
             flex-direction: column;
@@ -1231,8 +1471,11 @@
                     </div>
                     <div class="session-panel">
                         <div class="session-header">
-                            <div class="session-title">All Sessions</div>
-                            <div class="session-stats" id="session-stats">0 sessions, 0 working</div>
+                            <div>
+                                <div class="session-title">All Sessions</div>
+                                <div class="session-stats" id="session-stats">0 sessions, 0 working</div>
+                            </div>
+                            <button class="btn btn-primary btn-sm" onclick="showLaunchModal()">+ New</button>
                         </div>
                         <div class="session-list" id="session-list">
                             <!-- Session cards rendered by JS -->
@@ -1360,6 +1603,54 @@
         </div>
     </div>
 
+    <!-- Launch Modal -->
+    <div class="modal-overlay" id="launch-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Launch New Session</span>
+                <button class="modal-close" onclick="closeLaunchModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-field">
+                    <div class="modal-label">Directory</div>
+                    <input type="text" id="launch-dir" class="launch-input" placeholder="Enter directory path...">
+                </div>
+                <div class="modal-field">
+                    <div class="modal-label">Quick Launch</div>
+                    <div class="quick-launch-list" id="quick-launch-list">
+                        <!-- Populated by JS with recent directories -->
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" onclick="closeLaunchModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="launchSession()">Launch</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Terminal Overlay -->
+    <div class="terminal-overlay" id="terminal-overlay">
+        <div class="terminal-wrapper">
+            <div class="terminal-header">
+                <div class="terminal-title">
+                    <span class="terminal-title-dot"></span>
+                    <span id="terminal-dir">Claude Code</span>
+                </div>
+                <div class="terminal-actions">
+                    <button class="terminal-btn" onclick="minimizeTerminal()" title="Minimize">&#8722;</button>
+                    <button class="terminal-btn" onclick="closeTerminal()" title="Close">&times;</button>
+                </div>
+            </div>
+            <div class="terminal-container" id="terminal-container"></div>
+        </div>
+    </div>
+
+    <!-- Minimized Terminals Tray -->
+    <div class="terminals-tray" id="terminals-tray">
+        <!-- Populated dynamically -->
+    </div>
+
     <script>
         const REFRESH_INTERVAL = {{.RefreshInterval}} * 1000;
         const WORK_DIR = '{{.WorkDir}}';
@@ -1370,6 +1661,12 @@
         let messageFilter = 'all';
         let factFilter = 'all';
         let selectedInstanceIndex = -1;
+
+        // Terminal state - support up to 4 terminals
+        const MAX_TERMINALS = 4;
+        let terminals = []; // Array of {id, terminal, socket, fitAddon, dir, projectName, minimized}
+        let activeTerminalId = null;
+        let terminalIdCounter = 0;
 
         // Navigation
         document.querySelectorAll('.nav-item').forEach(item => {
@@ -1868,10 +2165,19 @@
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
-            // Don't handle shortcuts when typing in inputs
+            // Don't handle shortcuts when typing in inputs or terminal is open
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-            if (e.key === 'Escape') closeModal();
+            // Escape closes terminal, modals
+            if (e.key === 'Escape') {
+                const terminalOverlay = document.getElementById('terminal-overlay');
+                if (terminalOverlay.classList.contains('active')) {
+                    minimizeTerminal(); // Minimize instead of close on Escape
+                    return;
+                }
+                closeModal();
+                closeLaunchModal();
+            }
             if (e.key === 'r' || e.key === 'R') {
                 if (!e.ctrlKey && !e.metaKey) fetchData();
             }
@@ -1897,6 +2203,314 @@
         document.getElementById('modal').addEventListener('click', (e) => {
             if (e.target.id === 'modal') closeModal();
         });
+
+        document.getElementById('launch-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'launch-modal') closeLaunchModal();
+        });
+
+        // Launch Modal Functions
+        function showLaunchModal() {
+            const modal = document.getElementById('launch-modal');
+            const input = document.getElementById('launch-dir');
+            const quickList = document.getElementById('quick-launch-list');
+
+            // Pre-fill with current working directory
+            input.value = WORK_DIR;
+
+            // Populate quick launch with existing instance directories
+            const dirs = [...new Set(allData.instances.map(i => i.directory))];
+            quickList.innerHTML = dirs.map(dir => {
+                const name = dir.split('/').pop();
+                return `
+                    <div class="quick-launch-item" onclick="launchFromDir('${escapeHtml(dir)}')">
+                        <div class="quick-launch-icon">&#128193;</div>
+                        <div class="quick-launch-info">
+                            <div class="quick-launch-name">${escapeHtml(name)}</div>
+                            <div class="quick-launch-path">${escapeHtml(dir)}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            modal.classList.add('active');
+            input.focus();
+        }
+
+        function closeLaunchModal() {
+            document.getElementById('launch-modal').classList.remove('active');
+        }
+
+        function launchFromDir(dir) {
+            document.getElementById('launch-dir').value = dir;
+            launchSession();
+        }
+
+        async function launchSession() {
+            const dir = document.getElementById('launch-dir').value.trim();
+            if (!dir) {
+                alert('Please enter a directory path');
+                return;
+            }
+
+            if (terminals.length >= MAX_TERMINALS) {
+                alert(`Maximum ${MAX_TERMINALS} terminals allowed. Close one to open another.`);
+                return;
+            }
+
+            closeLaunchModal();
+            openTerminal(dir);
+        }
+
+        // Terminal Functions
+        function createTerminalTheme() {
+            return {
+                background: '#0d1117',
+                foreground: '#c9d1d9',
+                cursor: '#c9d1d9',
+                cursorAccent: '#0d1117',
+                selection: 'rgba(139, 92, 246, 0.3)',
+                black: '#484f58',
+                red: '#ff7b72',
+                green: '#3fb950',
+                yellow: '#d29922',
+                blue: '#58a6ff',
+                magenta: '#bc8cff',
+                cyan: '#39c5cf',
+                white: '#b1bac4',
+                brightBlack: '#6e7681',
+                brightRed: '#ffa198',
+                brightGreen: '#56d364',
+                brightYellow: '#e3b341',
+                brightBlue: '#79c0ff',
+                brightMagenta: '#d2a8ff',
+                brightCyan: '#56d4dd',
+                brightWhite: '#f0f6fc'
+            };
+        }
+
+        function openTerminal(dir) {
+            const overlay = document.getElementById('terminal-overlay');
+            const container = document.getElementById('terminal-container');
+            const titleDir = document.getElementById('terminal-dir');
+
+            const projectName = dir.split('/').pop();
+            const termId = ++terminalIdCounter;
+
+            // Create new terminal instance
+            const term = new Terminal({
+                cursorBlink: true,
+                fontSize: 14,
+                fontFamily: "'JetBrains Mono', 'Menlo', 'Monaco', monospace",
+                theme: createTerminalTheme()
+            });
+
+            const fit = new FitAddon.FitAddon();
+            term.loadAddon(fit);
+
+            const webLinks = new WebLinksAddon.WebLinksAddon();
+            term.loadAddon(webLinks);
+
+            // Create terminal entry
+            const termEntry = {
+                id: termId,
+                terminal: term,
+                socket: null,
+                fitAddon: fit,
+                dir: dir,
+                projectName: projectName,
+                minimized: false
+            };
+
+            terminals.push(termEntry);
+            activeTerminalId = termId;
+
+            // Update title
+            titleDir.textContent = 'Claude Code - ' + projectName;
+
+            // Clear container and show
+            container.innerHTML = '';
+            overlay.classList.add('active');
+
+            // Open terminal in container
+            term.open(container);
+
+            // Fit and connect
+            setTimeout(() => {
+                fit.fit();
+                connectTerminalWebSocket(termEntry);
+            }, 100);
+
+            // Handle window resize
+            window.addEventListener('resize', handleTerminalResize);
+            updateTerminalsTray();
+        }
+
+        function handleTerminalResize() {
+            const active = terminals.find(t => t.id === activeTerminalId);
+            if (active && active.fitAddon && active.terminal) {
+                active.fitAddon.fit();
+                if (active.socket && active.socket.readyState === WebSocket.OPEN) {
+                    active.socket.send(JSON.stringify({
+                        cols: active.terminal.cols,
+                        rows: active.terminal.rows
+                    }));
+                }
+            }
+        }
+
+        function connectTerminalWebSocket(termEntry) {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/api/terminal?dir=${encodeURIComponent(termEntry.dir)}`;
+
+            const socket = new WebSocket(wsUrl);
+            termEntry.socket = socket;
+
+            socket.onopen = () => {
+                console.log('Terminal WebSocket connected for', termEntry.projectName);
+                // Wait for layout to settle before measuring
+                requestAnimationFrame(() => {
+                    termEntry.fitAddon.fit();
+                    const size = { cols: termEntry.terminal.cols, rows: termEntry.terminal.rows };
+                    console.log('Sending terminal size:', size);
+                    socket.send(JSON.stringify(size));
+                });
+            };
+
+            socket.onmessage = (event) => {
+                // Handle binary data from PTY
+                if (event.data instanceof Blob) {
+                    event.data.arrayBuffer().then(buffer => {
+                        termEntry.terminal.write(new Uint8Array(buffer));
+                    });
+                } else if (event.data instanceof ArrayBuffer) {
+                    termEntry.terminal.write(new Uint8Array(event.data));
+                } else {
+                    termEntry.terminal.write(event.data);
+                }
+            };
+
+            socket.onerror = (error) => {
+                console.error('Terminal WebSocket error:', error);
+                termEntry.terminal.write('\r\n\x1b[31mConnection error.\x1b[0m\r\n');
+            };
+
+            socket.onclose = () => {
+                console.log('Terminal WebSocket closed for', termEntry.projectName);
+                termEntry.terminal.write('\r\n\x1b[33mSession ended.\x1b[0m\r\n');
+            };
+
+            termEntry.terminal.onData(data => {
+                if (socket.readyState === WebSocket.OPEN) {
+                    socket.send(data);
+                }
+            });
+        }
+
+        function closeTerminal(termId = activeTerminalId) {
+            const idx = terminals.findIndex(t => t.id === termId);
+            if (idx === -1) return;
+
+            const termEntry = terminals[idx];
+
+            // Close socket
+            if (termEntry.socket) {
+                termEntry.socket.close();
+            }
+
+            // Dispose terminal
+            termEntry.terminal.dispose();
+
+            // Remove from array
+            terminals.splice(idx, 1);
+
+            // Update active
+            if (activeTerminalId === termId) {
+                activeTerminalId = null;
+                const overlay = document.getElementById('terminal-overlay');
+                overlay.classList.remove('active');
+            }
+
+            updateTerminalsTray();
+
+            // Refresh data
+            setTimeout(fetchData, 1000);
+        }
+
+        function minimizeTerminal() {
+            const termEntry = terminals.find(t => t.id === activeTerminalId);
+            if (!termEntry) return;
+
+            termEntry.minimized = true;
+            activeTerminalId = null;
+
+            const overlay = document.getElementById('terminal-overlay');
+            overlay.classList.remove('active');
+
+            updateTerminalsTray();
+        }
+
+        function restoreTerminal(termId) {
+            const termEntry = terminals.find(t => t.id === termId);
+            if (!termEntry) return;
+
+            const overlay = document.getElementById('terminal-overlay');
+            const container = document.getElementById('terminal-container');
+            const titleDir = document.getElementById('terminal-dir');
+
+            termEntry.minimized = false;
+            activeTerminalId = termId;
+
+            // Update title
+            titleDir.textContent = 'Claude Code - ' + termEntry.projectName;
+
+            // Clear and re-attach terminal
+            container.innerHTML = '';
+            termEntry.terminal.open(container);
+
+            overlay.classList.add('active');
+
+            // Refit
+            setTimeout(() => {
+                termEntry.fitAddon.fit();
+                // Send resize in case size changed
+                if (termEntry.socket && termEntry.socket.readyState === WebSocket.OPEN) {
+                    termEntry.socket.send(JSON.stringify({
+                        cols: termEntry.terminal.cols,
+                        rows: termEntry.terminal.rows
+                    }));
+                }
+            }, 100);
+
+            updateTerminalsTray();
+        }
+
+        function updateTerminalsTray() {
+            const tray = document.getElementById('terminals-tray');
+            const minimized = terminals.filter(t => t.minimized);
+
+            if (minimized.length === 0) {
+                tray.classList.remove('active');
+                tray.innerHTML = '';
+                return;
+            }
+
+            tray.classList.add('active');
+            tray.innerHTML = minimized.map(t => `
+                <div class="terminal-minimized" onclick="restoreTerminal(${t.id})">
+                    <div class="terminal-minimized-dot"></div>
+                    <span class="terminal-minimized-text">${escapeHtml(t.projectName)}</span>
+                    <span class="terminal-minimized-close" onclick="event.stopPropagation(); closeTerminal(${t.id})">&times;</span>
+                </div>
+            `).join('');
+        }
+
+        function hasActiveTerminal() {
+            return terminals.some(t => !t.minimized);
+        }
+
+        function hasMinimizedTerminals() {
+            return terminals.some(t => t.minimized);
+        }
 
         // Initial fetch and auto-refresh
         fetchData();

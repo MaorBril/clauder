@@ -5,12 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
+	"sync"
 	"time"
 
+	"github.com/creack/pty"
+	"github.com/gorilla/websocket"
 	"github.com/maorbril/clauder/internal/store"
 )
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins for local development
+	},
+}
 
 //go:embed templates/*
 var templateFS embed.FS
@@ -108,6 +120,8 @@ type StatsData struct {
 func (ws *WebServer) Start(port int) error {
 	http.HandleFunc("/", ws.handleDashboard)
 	http.HandleFunc("/api/data", ws.handleAPIData)
+	http.HandleFunc("/api/launch", ws.handleLaunch)
+	http.HandleFunc("/api/terminal", ws.handleTerminal)
 
 	addr := fmt.Sprintf(":%d", port)
 	log.Printf("Starting web dashboard at http://localhost%s", addr)
@@ -162,6 +176,170 @@ func (ws *WebServer) handleAPIData(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (ws *WebServer) handleLaunch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Directory string `json:"directory"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	dir := req.Directory
+	if dir == "" {
+		dir = ws.workDir
+	}
+
+	// Verify directory exists
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		http.Error(w, "Directory does not exist", http.StatusBadRequest)
+		return
+	}
+
+	// Launch terminal with claude - use osascript on macOS
+	script := fmt.Sprintf(`
+		tell application "Terminal"
+			activate
+			do script "cd %q && claude"
+		end tell
+	`, dir)
+
+	cmd := exec.Command("osascript", "-e", script)
+	if err := cmd.Run(); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to launch terminal: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":    "launched",
+		"directory": dir,
+	})
+}
+
+func (ws *WebServer) handleTerminal(w http.ResponseWriter, r *http.Request) {
+	dir := r.URL.Query().Get("dir")
+	if dir == "" {
+		dir = ws.workDir
+	}
+
+	// Verify directory exists
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		http.Error(w, "Directory does not exist", http.StatusBadRequest)
+		return
+	}
+
+	// Upgrade to WebSocket
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("WebSocket upgrade failed: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	// Create command
+	cmd := exec.Command("claude")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+
+	// Wait for initial size from client before starting PTY
+	var initialSize pty.Winsize
+	initialSize.Cols = 80
+	initialSize.Rows = 24
+
+	// Try to read initial size (with timeout)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if msgType, data, err := conn.ReadMessage(); err == nil && msgType == websocket.TextMessage {
+		var size struct {
+			Cols uint16 `json:"cols"`
+			Rows uint16 `json:"rows"`
+		}
+		if json.Unmarshal(data, &size) == nil && size.Cols > 0 && size.Rows > 0 {
+			initialSize.Cols = size.Cols
+			initialSize.Rows = size.Rows
+		}
+	}
+	conn.SetReadDeadline(time.Time{}) // Clear deadline
+
+	log.Printf("Starting PTY with size: %dx%d", initialSize.Cols, initialSize.Rows)
+
+	// Start PTY with the correct size from the beginning
+	ptmx, err := pty.StartWithSize(cmd, &initialSize)
+	if err != nil {
+		log.Printf("Failed to start PTY: %v", err)
+		conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("Error: %v\r\n", err)))
+		return
+	}
+	defer ptmx.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// PTY -> WebSocket
+	go func() {
+		defer wg.Done()
+		buf := make([]byte, 4096)
+		for {
+			n, err := ptmx.Read(buf)
+			if err != nil {
+				if err != io.EOF {
+					log.Printf("PTY read error: %v", err)
+				}
+				return
+			}
+			// Send as binary message (PTY output may contain non-UTF8 bytes)
+			if err := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
+				log.Printf("WebSocket write error: %v", err)
+				return
+			}
+		}
+	}()
+
+	// WebSocket -> PTY
+	go func() {
+		defer wg.Done()
+		for {
+			msgType, data, err := conn.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+					log.Printf("WebSocket read error: %v", err)
+				}
+				// Kill the process when WebSocket closes
+				cmd.Process.Kill()
+				return
+			}
+
+			// Handle resize messages (JSON with cols/rows)
+			if msgType == websocket.TextMessage {
+				var resize struct {
+					Cols uint16 `json:"cols"`
+					Rows uint16 `json:"rows"`
+				}
+				if err := json.Unmarshal(data, &resize); err == nil && resize.Cols > 0 && resize.Rows > 0 {
+					pty.Setsize(ptmx, &pty.Winsize{Rows: resize.Rows, Cols: resize.Cols})
+					continue
+				}
+			}
+
+			// Write input to PTY
+			if _, err := ptmx.Write(data); err != nil {
+				log.Printf("PTY write error: %v", err)
+				return
+			}
+		}
+	}()
+
+	// Wait for command to finish
+	cmd.Wait()
+	wg.Wait()
 }
 
 // Helper functions
