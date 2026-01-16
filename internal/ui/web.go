@@ -52,10 +52,20 @@ func NewWebServer(s store.Store, workDir string, refreshInterval time.Duration) 
 
 // APIResponse represents the JSON response for the API
 type APIResponse struct {
-	Instances []InstanceData `json:"instances"`
-	Messages  []MessageData  `json:"messages"`
-	Facts     []FactData     `json:"facts"`
-	Stats     StatsData      `json:"stats"`
+	Instances    []InstanceData    `json:"instances"`
+	Messages     []MessageData     `json:"messages"`
+	Facts        []FactData        `json:"facts"`
+	Stats        StatsData         `json:"stats"`
+	Connections  []ConnectionData  `json:"connections"`
+}
+
+// ConnectionData represents communication frequency between two instances
+type ConnectionData struct {
+	From      string `json:"from"`      // Instance ID
+	To        string `json:"to"`        // Instance ID
+	FromName  string `json:"fromName"`  // Project name
+	ToName    string `json:"toName"`    // Project name
+	Count     int    `json:"count"`     // Message count
 }
 
 // InstanceData represents an instance in the API response
@@ -428,6 +438,20 @@ func joinStrings(strs []string, sep string) string {
 	return result
 }
 
+func splitString(s, sep string) []string {
+	var result []string
+	start := 0
+	for i := 0; i <= len(s)-len(sep); i++ {
+		if s[i:i+len(sep)] == sep {
+			result = append(result, s[start:i])
+			start = i + len(sep)
+			i = start - 1
+		}
+	}
+	result = append(result, s[start:])
+	return result
+}
+
 func (ws *WebServer) buildResponse(instances []store.Instance, messages []store.Message, facts []store.Fact) APIResponse {
 	// Build instance ID -> directory map for message lookups
 	instanceDirMap := make(map[string]string)
@@ -625,10 +649,41 @@ func (ws *WebServer) buildResponse(instances []store.Instance, messages []store.
 		}
 	}
 
+	// Build connections (message frequency between instance pairs)
+	connectionCounts := make(map[string]int) // "fromID|toID" -> count
+	for _, msg := range messages {
+		// Create bidirectional key (smaller ID first for consistency)
+		var key string
+		if msg.FromInstance < msg.ToInstance {
+			key = msg.FromInstance + "|" + msg.ToInstance
+		} else {
+			key = msg.ToInstance + "|" + msg.FromInstance
+		}
+		connectionCounts[key]++
+	}
+
+	// Convert to ConnectionData slice
+	connections := make([]ConnectionData, 0, len(connectionCounts))
+	for key, count := range connectionCounts {
+		parts := splitString(key, "|")
+		if len(parts) != 2 {
+			continue
+		}
+		fromID, toID := parts[0], parts[1]
+		connections = append(connections, ConnectionData{
+			From:     fromID,
+			To:       toID,
+			FromName: extractProjectName(instanceDirMap[fromID]),
+			ToName:   extractProjectName(instanceDirMap[toID]),
+			Count:    count,
+		})
+	}
+
 	return APIResponse{
-		Instances: instanceData,
-		Messages:  messageData,
-		Facts:     factData,
+		Instances:   instanceData,
+		Messages:    messageData,
+		Facts:       factData,
+		Connections: connections,
 		Stats: StatsData{
 			TotalInstances:   len(instances),
 			WorkingInstances: workingCount,
