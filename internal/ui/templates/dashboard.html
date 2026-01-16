@@ -669,15 +669,32 @@
         }
 
         .hex-grid {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            min-height: 500px;
+            z-index: 1;
+        }
+
+        .hive-cluster {
+            position: absolute;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            min-height: 100%;
-            position: relative;
-            z-index: 1;
-            padding: 2rem;
-            gap: 0;
+            padding: 0.5rem;
+            border-radius: var(--radius);
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .hive-cluster:not(.hive-unclustered) {
+            background: rgba(255, 255, 255, 0.03);
+            border-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .hive-unclustered {
+            opacity: 0.7;
         }
 
         .hex-row {
@@ -1743,11 +1760,198 @@
         }
 
         // Map View
+        // Cluster instances based on message frequency
+        // Uses frequency-based pairing: instances are grouped only if they have
+        // significant direct communication (>= 3 messages between them)
+        function clusterInstances(instances, connections) {
+            if (!connections || connections.length === 0 || instances.length <= 2) {
+                return { clustered: instances.map((inst, i) => ({ ...inst, cluster: -1, originalIndex: i })), clusters: [] };
+            }
+
+            const MIN_MESSAGES_FOR_CLUSTER = 3; // Minimum messages to form a cluster
+
+            // Build adjacency map with weights (direct connections only)
+            const connectionStrength = new Map(); // "id1|id2" -> count (sorted ids)
+            for (const conn of connections) {
+                // Create canonical key (smaller ID first)
+                const ids = [conn.from, conn.to].sort();
+                const key = ids.join('|');
+                connectionStrength.set(key, (connectionStrength.get(key) || 0) + conn.count);
+            }
+
+            // Filter to strong connections only
+            const strongConnections = [];
+            for (const [key, count] of connectionStrength) {
+                if (count >= MIN_MESSAGES_FOR_CLUSTER) {
+                    const [id1, id2] = key.split('|');
+                    strongConnections.push({ from: id1, to: id2, count });
+                }
+            }
+
+            // Union-Find only for strong connections
+            const parent = new Map();
+            instances.forEach(inst => parent.set(inst.id, inst.id));
+
+            function find(x) {
+                if (parent.get(x) !== x) {
+                    parent.set(x, find(parent.get(x)));
+                }
+                return parent.get(x);
+            }
+
+            function union(x, y) {
+                const px = find(x), py = find(y);
+                if (px !== py) parent.set(px, py);
+            }
+
+            // Union only instances with strong connections
+            for (const conn of strongConnections) {
+                const fromInst = instances.find(i => i.id === conn.from);
+                const toInst = instances.find(i => i.id === conn.to);
+                if (fromInst && toInst) {
+                    union(conn.from, conn.to);
+                }
+            }
+
+            // Find clusters (groups of 2+ instances)
+            const rootCounts = new Map();
+            instances.forEach(inst => {
+                const root = find(inst.id);
+                rootCounts.set(root, (rootCounts.get(root) || 0) + 1);
+            });
+
+            // Only assign cluster IDs to roots with 2+ instances
+            const clusterMap = new Map();
+            let clusterId = 0;
+            for (const [root, count] of rootCounts) {
+                if (count >= 2) {
+                    clusterMap.set(root, clusterId++);
+                }
+            }
+
+            // Assign clusters (-1 for unclustered/isolated instances)
+            const clustered = instances.map((inst, i) => {
+                const root = find(inst.id);
+                const cluster = clusterMap.has(root) ? clusterMap.get(root) : -1;
+                return {
+                    ...inst,
+                    cluster,
+                    originalIndex: i
+                };
+            });
+
+            // Sort: clustered instances first (grouped by cluster), then unclustered
+            clustered.sort((a, b) => {
+                // Unclustered (-1) go to the end
+                if (a.cluster === -1 && b.cluster === -1) return 0;
+                if (a.cluster === -1) return 1;
+                if (b.cluster === -1) return -1;
+
+                // Sort by cluster ID
+                if (a.cluster !== b.cluster) return a.cluster - b.cluster;
+
+                // Within same cluster, sort by connection strength
+                const aConns = strongConnections.filter(c => c.from === a.id || c.to === a.id)
+                    .reduce((sum, c) => sum + c.count, 0);
+                const bConns = strongConnections.filter(c => c.from === b.id || c.to === b.id)
+                    .reduce((sum, c) => sum + c.count, 0);
+                return bConns - aConns;
+            });
+
+            const clusters = [...new Set(clustered.map(i => i.cluster).filter(c => c >= 0))];
+            return { clustered, clusters };
+        }
+
+        // Color palette for clusters
+        const clusterColors = [
+            'var(--secondary)',      // Cyan
+            'var(--primary)',        // Purple
+            'var(--success)',        // Green
+            'var(--warning)',        // Orange
+            '#E879F9',               // Pink
+            '#FB923C',               // Light orange
+        ];
+
+        // Generate random positions for clusters that are spread across the screen
+        // Uses a seeded random to keep positions stable between renders
+        let clusterSeed = 12345;
+        function seededRandom() {
+            clusterSeed = (clusterSeed * 1103515245 + 12345) & 0x7fffffff;
+            return (clusterSeed % 1000) / 1000;
+        }
+
+        function generateClusterPositions(count, container) {
+            if (count === 0) return [];
+            if (count === 1) return [{ x: 50, y: 45 }];
+
+            // Reset seed for consistent positions
+            clusterSeed = 12345 + count;
+
+            const positions = [];
+            const minDistance = 30; // Minimum distance between cluster centers (%)
+
+            // Predefined zones to spread clusters across the screen
+            const zones = [
+                { x: 30, y: 30 },   // Top left
+                { x: 70, y: 30 },   // Top right
+                { x: 50, y: 50 },   // Center
+                { x: 25, y: 65 },   // Bottom left
+                { x: 75, y: 65 },   // Bottom right
+                { x: 50, y: 25 },   // Top center
+                { x: 50, y: 75 },   // Bottom center
+                { x: 20, y: 45 },   // Left center
+                { x: 80, y: 45 },   // Right center
+            ];
+
+            // Shuffle zones based on seed
+            const shuffledZones = [...zones].sort(() => seededRandom() - 0.5);
+
+            for (let i = 0; i < count; i++) {
+                if (i < shuffledZones.length) {
+                    // Add some randomness to the zone position
+                    const zone = shuffledZones[i];
+                    const jitterX = (seededRandom() - 0.5) * 15;
+                    const jitterY = (seededRandom() - 0.5) * 15;
+                    positions.push({
+                        x: Math.max(15, Math.min(85, zone.x + jitterX)),
+                        y: Math.max(15, Math.min(85, zone.y + jitterY))
+                    });
+                } else {
+                    // For extra clusters, find a spot with good spacing
+                    let bestPos = { x: 50, y: 50 };
+                    let bestMinDist = 0;
+
+                    for (let attempt = 0; attempt < 20; attempt++) {
+                        const testPos = {
+                            x: 15 + seededRandom() * 70,
+                            y: 15 + seededRandom() * 70
+                        };
+
+                        let minDist = Infinity;
+                        for (const pos of positions) {
+                            const dist = Math.sqrt(Math.pow(pos.x - testPos.x, 2) + Math.pow(pos.y - testPos.y, 2));
+                            minDist = Math.min(minDist, dist);
+                        }
+
+                        if (minDist > bestMinDist) {
+                            bestMinDist = minDist;
+                            bestPos = testPos;
+                        }
+                    }
+
+                    positions.push(bestPos);
+                }
+            }
+
+            return positions;
+        }
+
         function renderMap() {
             const hexGrid = document.getElementById('hex-grid');
             const sessionList = document.getElementById('session-list');
             const sessionStats = document.getElementById('session-stats');
             const instances = allData.instances;
+            const connections = allData.connections || [];
 
             // Update stats
             const working = instances.filter(i => i.isActive && !i.isIdle).length;
@@ -1764,78 +1968,123 @@
                 return;
             }
 
-            // Render hex grid in honeycomb pattern (diamond shape)
-            const n = instances.length;
-            let rowSizes = [];
+            // Cluster instances based on communication
+            const { clustered, clusters } = clusterInstances(instances, connections);
 
-            // Create diamond-like distribution
-            if (n <= 3) {
-                rowSizes = [n];
-            } else if (n <= 5) {
-                rowSizes = [2, n - 2 > 0 ? n - 2 : 1, n > 4 ? 1 : 0].filter(x => x > 0);
-            } else if (n <= 7) {
-                rowSizes = [2, 3, 2];
-                if (n > 7) rowSizes = [2, 3, 2];
-            } else {
-                // For larger sets, build outward from center
-                const mid = Math.ceil(Math.sqrt(n));
-                let remaining = n;
-                let size = 1;
-                let growing = true;
-                while (remaining > 0) {
-                    const take = Math.min(size, remaining);
-                    rowSizes.push(take);
-                    remaining -= take;
-                    if (growing) {
-                        size++;
-                        if (size > mid) growing = false;
-                    } else {
-                        size = Math.max(1, size - 1);
+            // Helper to create honeycomb layout for a group of instances
+            function createHoneycomb(groupInstances, globalOffset, clusterColor) {
+                const n = groupInstances.length;
+                if (n === 0) return '';
+
+                let rowSizes = [];
+                if (n <= 3) {
+                    rowSizes = [n];
+                } else if (n <= 5) {
+                    rowSizes = [2, n - 2 > 0 ? n - 2 : 1, n > 4 ? 1 : 0].filter(x => x > 0);
+                } else if (n <= 7) {
+                    rowSizes = [2, 3, 2];
+                } else {
+                    const mid = Math.ceil(Math.sqrt(n));
+                    let remaining = n;
+                    let size = 1;
+                    let growing = true;
+                    while (remaining > 0) {
+                        const take = Math.min(size, remaining);
+                        rowSizes.push(take);
+                        remaining -= take;
+                        if (growing) {
+                            size++;
+                            if (size > mid) growing = false;
+                        } else {
+                            size = Math.max(1, size - 1);
+                        }
                     }
                 }
+
+                const rows = [];
+                let idx = 0;
+
+                rowSizes.forEach((rowSize) => {
+                    const rowInsts = groupInstances.slice(idx, idx + rowSize);
+                    const hexes = rowInsts.map((inst, i) => {
+                        const globalIdx = globalOffset + idx + i;
+                        const statusClass = inst.needsAttention ? 'needs-attention' : (inst.isActive ? 'active' : 'inactive');
+                        const statusText = inst.needsAttention ? 'Attention' : (inst.isActive ? 'Working' : 'Offline');
+                        const statusBadgeClass = inst.needsAttention ? 'attention' : (inst.isActive ? 'working' : 'offline');
+                        const badgeNum = globalIdx < 9 ? globalIdx + 1 : '';
+                        const clusterStyle = clusterColor ? `border-color: ${clusterColor}; box-shadow: 0 0 15px ${clusterColor}40;` : '';
+
+                        return `
+                            <div class="hex ${statusClass}" data-index="${globalIdx}" data-original="${inst.originalIndex}" onclick="selectInstance(${inst.originalIndex})">
+                                ${badgeNum ? `<div class="hex-badge">${badgeNum}</div>` : ''}
+                                <div class="hex-inner" style="${clusterStyle}">
+                                    <div class="hex-project">${escapeHtml(inst.projectName)}</div>
+                                    <div class="hex-status ${statusBadgeClass}">${statusText}</div>
+                                    <div class="hex-time">${inst.heartbeatAge}</div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                    rows.push(`<div class="hex-row">${hexes}</div>`);
+                    idx += rowSize;
+                });
+
+                return rows.join('');
             }
 
-            const rows = [];
-            let idx = 0;
-
-            rowSizes.forEach((rowSize, rowNum) => {
-                const rowInstances = instances.slice(idx, idx + rowSize);
-
-                const hexes = rowInstances.map((inst, i) => {
-                    const globalIdx = idx + i;
-                    const statusClass = inst.needsAttention ? 'needs-attention' : (inst.isActive ? 'active' : 'inactive');
-                    const statusText = inst.needsAttention ? 'Attention' : (inst.isActive ? 'Working' : 'Offline');
-                    const statusBadgeClass = inst.needsAttention ? 'attention' : (inst.isActive ? 'working' : 'offline');
-                    const badgeNum = globalIdx < 9 ? globalIdx + 1 : '';
-
-                    return `
-                        <div class="hex ${statusClass}" data-index="${globalIdx}" onclick="selectInstance(${globalIdx})">
-                            ${badgeNum ? `<div class="hex-badge">${badgeNum}</div>` : ''}
-                            <div class="hex-inner">
-                                <div class="hex-project">${escapeHtml(inst.projectName)}</div>
-                                <div class="hex-status ${statusBadgeClass}">${statusText}</div>
-                                <div class="hex-time">${inst.heartbeatAge}</div>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-
-                rows.push(`<div class="hex-row">${hexes}</div>`);
-                idx += rowSize;
+            // Group instances by cluster
+            const clusterGroups = new Map();
+            const unclustered = [];
+            clustered.forEach(inst => {
+                if (inst.cluster >= 0) {
+                    if (!clusterGroups.has(inst.cluster)) {
+                        clusterGroups.set(inst.cluster, []);
+                    }
+                    clusterGroups.get(inst.cluster).push(inst);
+                } else {
+                    unclustered.push(inst);
+                }
             });
 
-            hexGrid.innerHTML = rows.join('');
+            // Generate random but non-overlapping positions for clusters
+            const totalClusters = clusterGroups.size + (unclustered.length > 0 ? 1 : 0);
+            const positions = generateClusterPositions(totalClusters, hexGrid);
 
-            // Render session cards
-            sessionList.innerHTML = instances.map((inst, idx) => {
+            // Render each cluster as a separate hive with random position
+            let allHives = [];
+            let globalIdx = 0;
+            let posIdx = 0;
+
+            // Render clustered groups first
+            for (const [clusterId, group] of clusterGroups) {
+                const clusterColor = clusterColors[clusterId % clusterColors.length];
+                const hiveHtml = createHoneycomb(group, globalIdx, clusterColor);
+                const pos = positions[posIdx++] || { x: 50, y: 50 };
+                allHives.push(`<div class="hive-cluster" data-cluster="${clusterId}" style="left: ${pos.x}%; top: ${pos.y}%; transform: translate(-50%, -50%);">${hiveHtml}</div>`);
+                globalIdx += group.length;
+            }
+
+            // Render unclustered instances
+            if (unclustered.length > 0) {
+                const hiveHtml = createHoneycomb(unclustered, globalIdx, '');
+                const pos = positions[posIdx++] || { x: 50, y: 80 };
+                allHives.push(`<div class="hive-cluster hive-unclustered" style="left: ${pos.x}%; top: ${pos.y}%; transform: translate(-50%, -50%);">${hiveHtml}</div>`);
+            }
+
+            hexGrid.innerHTML = allHives.join('');
+
+            // Render session cards (use clustered order)
+            sessionList.innerHTML = clustered.map((inst, idx) => {
                 const dotClass = inst.needsAttention ? 'attention' : (inst.isActive ? 'working' : 'offline');
-                const isSelected = idx === selectedInstanceIndex;
+                const isSelected = inst.originalIndex === selectedInstanceIndex;
                 const badgeNum = idx < 9 ? idx + 1 : '-';
                 const attentionText = inst.attentionReason || 'Needs attention';
+                const clusterColor = (inst.cluster >= 0) ? clusterColors[inst.cluster % clusterColors.length] : '';
+                const clusterBorder = clusterColor ? `border-left: 3px solid ${clusterColor};` : '';
 
                 return `
                     <div class="session-card ${inst.needsAttention ? 'needs-attention' : ''} ${isSelected ? 'selected' : ''}"
-                         data-index="${idx}" onclick="selectInstance(${idx})">
+                         data-index="${inst.originalIndex}" onclick="selectInstance(${inst.originalIndex})" style="${clusterBorder}">
                         <div class="session-badge">${badgeNum}</div>
                         <div class="session-dot ${dotClass}"></div>
                         <div class="session-info">
