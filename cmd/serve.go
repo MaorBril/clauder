@@ -35,9 +35,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	// Use a stable instance ID based on directory
-	// This ensures messages persist across restarts
-	instanceID := generateInstanceID(workDir)
+	// Generate directory hash for grouping instances by directory
+	dirHash := GenerateDirectoryHash(workDir)
+
+	// Use a composed instance ID: directoryHash_pid
+	// This allows multiple instances per directory while enabling message fallback
+	instanceID := generateInstanceID(workDir, os.Getpid())
 
 	// Use PID-based index ID for Bleve to ensure each process gets its own index
 	// This prevents file locking issues when multiple processes run in the same directory
@@ -55,7 +58,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// Register this instance
-	if err := s.RegisterInstance(instanceID, os.Getpid(), workDir, ""); err != nil {
+	if err := s.RegisterInstance(instanceID, os.Getpid(), workDir, dirHash, ""); err != nil {
 		return fmt.Errorf("failed to register instance: %w", err)
 	}
 
@@ -98,11 +101,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// generateInstanceID creates a stable instance ID based on directory
-// This ensures messages persist across Claude Code restarts
-func generateInstanceID(directory string) string {
+// generateInstanceID creates a composed instance ID: directoryHash_pid
+// This allows multiple instances per directory while enabling message fallback
+// to other instances in the same directory if the target instance is gone
+func generateInstanceID(directory string, pid int) string {
+	dirHash := GenerateDirectoryHash(directory)
+	return fmt.Sprintf("%s_%d", dirHash, pid)
+}
+
+// GenerateDirectoryHash creates a hash of the directory path
+// Used for grouping instances by directory and message fallback routing
+// Uses 16 bytes (32 hex chars) to match legacy instance ID format for backwards compatibility
+func GenerateDirectoryHash(directory string) string {
 	hash := sha256.Sum256([]byte(directory))
-	// Use first 16 bytes (32 hex chars) for a readable ID
 	return hex.EncodeToString(hash[:16])
 }
 

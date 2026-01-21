@@ -261,6 +261,16 @@ func (s *Server) toolListInstances(args map[string]interface{}) ToolResult {
 	return textResult(sb.String())
 }
 
+// extractDirectoryHash extracts the directory hash prefix from a composed instance ID.
+// Instance IDs have the format: {directoryHash}_{pid}
+func extractDirectoryHash(instanceID string) string {
+	if idx := strings.LastIndex(instanceID, "_"); idx > 0 {
+		return instanceID[:idx]
+	}
+	// Fallback: treat the whole ID as the directory hash (legacy format)
+	return instanceID
+}
+
 func (s *Server) toolSendMessage(args map[string]interface{}) ToolResult {
 	telemetry.TrackMCPTool("send_message")
 	to, ok := args["to"].(string)
@@ -277,21 +287,37 @@ func (s *Server) toolSendMessage(args map[string]interface{}) ToolResult {
 		return errorResult(fmt.Sprintf("message exceeds maximum size of %d bytes", MaxMessageSize))
 	}
 
-	// Check if target instance exists
+	// Try to find the exact target instance first
+	actualTarget := to
 	target, err := s.store.GetInstance(to)
 	if err != nil {
 		return errorResult(fmt.Sprintf("failed to find instance: %v", err))
 	}
+
+	// If exact instance not found, try to find another instance in the same directory
 	if target == nil {
-		return errorResult(fmt.Sprintf("instance '%s' not found", to))
+		dirHash := extractDirectoryHash(to)
+		instances, err := s.store.GetInstancesByDirectoryHash(dirHash)
+		if err != nil {
+			return errorResult(fmt.Sprintf("failed to find instances: %v", err))
+		}
+		if len(instances) == 0 {
+			return errorResult(fmt.Sprintf("instance '%s' not found (no instances in directory)", to))
+		}
+		// Use the first available instance in the same directory
+		target = &instances[0]
+		actualTarget = target.ID
 	}
 
-	msg, err := s.store.SendMessage(s.instanceID, to, content)
+	msg, err := s.store.SendMessage(s.instanceID, actualTarget, content)
 	if err != nil {
 		return errorResult(fmt.Sprintf("failed to send message: %v", err))
 	}
 
-	return textResult(fmt.Sprintf("Message #%d sent to %s", msg.ID, to))
+	if actualTarget != to {
+		return textResult(fmt.Sprintf("Message #%d sent to %s (routed from unavailable %s)", msg.ID, actualTarget, to))
+	}
+	return textResult(fmt.Sprintf("Message #%d sent to %s", msg.ID, actualTarget))
 }
 
 func (s *Server) toolGetMessages(args map[string]interface{}) ToolResult {
@@ -301,7 +327,9 @@ func (s *Server) toolGetMessages(args map[string]interface{}) ToolResult {
 		unreadOnly = val
 	}
 
-	messages, err := s.store.GetMessages(s.instanceID, unreadOnly)
+	// Use directory hash to also receive messages sent to other (now-dead) instances in the same directory
+	dirHash := extractDirectoryHash(s.instanceID)
+	messages, err := s.store.GetMessagesByDirectoryHash(dirHash, unreadOnly)
 	if err != nil {
 		return errorResult(fmt.Sprintf("failed to get messages: %v", err))
 	}
@@ -359,7 +387,9 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-// getUnreadCount returns the number of unread messages for this instance
+// getUnreadCount returns the number of unread messages specifically for this instance
+// Note: Uses exact instance ID match, not directory-based fallback, to avoid
+// notifying about messages sent to sibling instances in the same directory
 func (s *Server) getUnreadCount() int {
 	messages, err := s.store.GetMessages(s.instanceID, true)
 	if err != nil {

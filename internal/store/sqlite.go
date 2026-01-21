@@ -283,6 +283,7 @@ func (s *SQLiteStore) migrate() error {
 		directory TEXT NOT NULL,
 		tty TEXT DEFAULT '',
 		is_leader INTEGER DEFAULT 0,
+		is_idle INTEGER DEFAULT 0,
 		started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		last_heartbeat DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
@@ -315,6 +316,10 @@ func (s *SQLiteStore) migrate() error {
 	_, _ = s.db.Exec("ALTER TABLE instances ADD COLUMN tty TEXT DEFAULT ''")
 	_, _ = s.db.Exec("ALTER TABLE instances ADD COLUMN is_leader INTEGER DEFAULT 0")
 	_, _ = s.db.Exec("ALTER TABLE instances ADD COLUMN is_idle INTEGER DEFAULT 0")
+
+	// Migration: Add directory_hash column for multi-instance support (for existing databases)
+	_, _ = s.db.Exec("ALTER TABLE instances ADD COLUMN directory_hash TEXT NOT NULL DEFAULT ''")
+	_, _ = s.db.Exec("CREATE INDEX IF NOT EXISTS idx_instances_directory_hash ON instances(directory_hash)")
 
 	return nil
 }
@@ -598,11 +603,11 @@ func (s *SQLiteStore) SoftDeleteFact(id int64) error {
 
 // Instances
 
-func (s *SQLiteStore) RegisterInstance(id string, pid int, directory, tty string) error {
+func (s *SQLiteStore) RegisterInstance(id string, pid int, directory, directoryHash, tty string) error {
 	now := time.Now()
 	_, err := s.db.Exec(
-		"INSERT OR REPLACE INTO instances (id, pid, directory, tty, started_at, last_heartbeat) VALUES (?, ?, ?, ?, ?, ?)",
-		id, pid, directory, tty, now, now,
+		"INSERT INTO instances (id, pid, directory, directory_hash, tty, started_at, last_heartbeat) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		id, pid, directory, directoryHash, tty, now, now,
 	)
 	return err
 }
@@ -658,6 +663,37 @@ func (s *SQLiteStore) GetInstance(id string) (*Instance, error) {
 	i.IsLeader = isLeader == 1
 	i.IsIdle = isIdle == 1
 	return &i, nil
+}
+
+// GetInstancesByDirectoryHash returns all instances with the given directory hash prefix
+// This enables message fallback routing to other instances in the same directory
+func (s *SQLiteStore) GetInstancesByDirectoryHash(directoryHash string) ([]Instance, error) {
+	// Match both:
+	// 1. New instances with populated directory_hash column
+	// 2. Legacy instances where id = directoryHash (old format without PID suffix)
+	rows, err := s.db.Query(
+		"SELECT id, pid, directory, tty, is_leader, is_idle, started_at, last_heartbeat FROM instances WHERE directory_hash = ? OR id = ? ORDER BY started_at DESC",
+		directoryHash, directoryHash,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var instances []Instance
+	for rows.Next() {
+		var i Instance
+		var tty sql.NullString
+		var isLeader, isIdle int
+		if err := rows.Scan(&i.ID, &i.PID, &i.Directory, &tty, &isLeader, &isIdle, &i.StartedAt, &i.LastHeartbeat); err != nil {
+			return nil, err
+		}
+		i.TTY = tty.String
+		i.IsLeader = isLeader == 1
+		i.IsIdle = isIdle == 1
+		instances = append(instances, i)
+	}
+	return instances, rows.Err()
 }
 
 func (s *SQLiteStore) CleanupStaleInstances(maxAge time.Duration) error {
@@ -830,6 +866,39 @@ func (s *SQLiteStore) GetMessages(toInstance string, unreadOnly bool) ([]Message
 	query += " ORDER BY created_at ASC"
 
 	rows, err := s.db.Query(query, toInstance)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var messages []Message
+	for rows.Next() {
+		var m Message
+		var readAt sql.NullTime
+		if err := rows.Scan(&m.ID, &m.FromInstance, &m.ToInstance, &m.Content, &m.CreatedAt, &readAt); err != nil {
+			return nil, err
+		}
+		if readAt.Valid {
+			m.ReadAt = &readAt.Time
+		}
+		messages = append(messages, m)
+	}
+	return messages, rows.Err()
+}
+
+// GetMessagesByDirectoryHash returns messages sent to any instance with the given directory hash prefix.
+// This enables instances to receive messages that were sent to other (now-dead) instances in the same directory.
+func (s *SQLiteStore) GetMessagesByDirectoryHash(directoryHash string, unreadOnly bool) ([]Message, error) {
+	// Match both new format ({directoryHash}_{pid}) and legacy format ({directoryHash} without underscore)
+	// This ensures backwards compatibility with messages sent to old-format instance IDs
+	newPattern := directoryHash + "_%"
+	query := "SELECT id, from_instance, to_instance, content, created_at, read_at FROM messages WHERE (to_instance LIKE ? OR to_instance = ?)"
+	if unreadOnly {
+		query += " AND read_at IS NULL"
+	}
+	query += " ORDER BY created_at ASC"
+
+	rows, err := s.db.Query(query, newPattern, directoryHash)
 	if err != nil {
 		return nil, err
 	}

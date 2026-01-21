@@ -43,11 +43,12 @@ type Store interface {
 	SoftDeleteFact(id int64) error
 
 	// Instances
-	RegisterInstance(id string, pid int, directory, tty string) error
+	RegisterInstance(id string, pid int, directory, directoryHash, tty string) error
 	Heartbeat(id string) error
 	UnregisterInstance(id string) error
 	GetInstances() ([]Instance, error)
 	GetInstance(id string) (*Instance, error)
+	GetInstancesByDirectoryHash(directoryHash string) ([]Instance, error)
 	CleanupStaleInstances(maxAge time.Duration) error
 
 	// Leader election
@@ -62,6 +63,7 @@ type Store interface {
 	// Messages
 	SendMessage(from, to, content string) (*Message, error)
 	GetMessages(toInstance string, unreadOnly bool) ([]Message, error)
+	GetMessagesByDirectoryHash(directoryHash string, unreadOnly bool) ([]Message, error)
 	GetAllMessages(limit int) ([]Message, error)
 	MarkMessageRead(id int64) error
 
