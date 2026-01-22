@@ -19,7 +19,8 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 		_ = os.RemoveAll(tmpDir)
 		t.Fatalf("failed to create store: %v", err)
 	}
-	server := NewServer(s, "test-instance", "/test/workdir")
+	// Use new format: {directoryHash}_{pid}
+	server := NewServer(s, "testhash_1", "/test/workdir")
 	cleanup := func() {
 		_ = s.Close()
 		_ = os.RemoveAll(tmpDir)
@@ -214,7 +215,7 @@ func TestToolSendMessage_Valid(t *testing.T) {
 	defer cleanup()
 
 	// Register target instance
-	_ = server.store.RegisterInstance("target-instance", 123, "/target", "")
+	_ = server.store.RegisterInstance("target-instance", 123, "/target", "targethash", "")
 
 	result := server.toolSendMessage(map[string]interface{}{
 		"to":      "target-instance",
@@ -277,7 +278,7 @@ func TestToolSendMessage_TooLarge(t *testing.T) {
 	defer cleanup()
 
 	// Register target instance
-	_ = server.store.RegisterInstance("target-instance", 123, "/target", "")
+	_ = server.store.RegisterInstance("target-instance", 123, "/target", "targethash", "")
 
 	largeContent := strings.Repeat("x", MaxMessageSize+1)
 	result := server.toolSendMessage(map[string]interface{}{
@@ -313,12 +314,12 @@ func TestToolGetMessages_WithMessages(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
-	// Register this instance and a sender
-	_ = server.store.RegisterInstance("test-instance", 1, "/test", "")
-	_ = server.store.RegisterInstance("sender", 2, "/sender", "")
+	// Register this instance (same hash as server: testhash) and a sender
+	_ = server.store.RegisterInstance("testhash_1", 1, "/test", "testhash", "")
+	_ = server.store.RegisterInstance("senderhash_2", 2, "/sender", "senderhash", "")
 
 	// Send a message to our instance
-	_, _ = server.store.SendMessage("sender", "test-instance", "hello from sender!")
+	_, _ = server.store.SendMessage("senderhash_2", "testhash_1", "hello from sender!")
 
 	result := server.toolGetMessages(map[string]interface{}{})
 
@@ -334,12 +335,12 @@ func TestToolGetMessages_MarksAsRead(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
-	// Register instances
-	_ = server.store.RegisterInstance("test-instance", 1, "/test", "")
-	_ = server.store.RegisterInstance("sender", 2, "/sender", "")
+	// Register instances (same hash as server: testhash)
+	_ = server.store.RegisterInstance("testhash_1", 1, "/test", "testhash", "")
+	_ = server.store.RegisterInstance("senderhash_2", 2, "/sender", "senderhash", "")
 
 	// Send a message
-	_, _ = server.store.SendMessage("sender", "test-instance", "test message")
+	_, _ = server.store.SendMessage("senderhash_2", "testhash_1", "test message")
 
 	// First call should return the message and mark it as read
 	result1 := server.toolGetMessages(map[string]interface{}{})
@@ -414,8 +415,8 @@ func TestToolListInstances_WithInstances(t *testing.T) {
 	defer cleanup()
 
 	// Register some instances
-	_ = server.store.RegisterInstance("instance-1", 123, "/dir1", "")
-	_ = server.store.RegisterInstance("instance-2", 456, "/dir2", "")
+	_ = server.store.RegisterInstance("instance-1", 123, "/dir1", "dir1hash", "")
+	_ = server.store.RegisterInstance("instance-2", 456, "/dir2", "dir2hash", "")
 
 	result := server.toolListInstances(map[string]interface{}{})
 
