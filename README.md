@@ -191,6 +191,27 @@ Start the server (typically done automatically by Claude Code):
 clauder serve
 ```
 
+### Multiple Instances in Same Directory
+
+Running multiple Claude sessions in the same project? Use the `--name` flag to differentiate them:
+
+```bash
+# Terminal 1 - working on frontend
+clauder wrap --name frontend
+
+# Terminal 2 - working on backend
+clauder wrap --name backend
+
+# Terminal 3 - running tests
+clauder wrap --name tests
+```
+
+Each named instance gets a unique ID and can be messaged individually:
+- **Targeted message**: Send to a specific instance by its full ID (includes `:name`)
+- **Broadcast message**: Send to all instances in a directory by using the directory ID
+
+Without `--name`, the second instance in the same directory automatically gets a unique suffix to avoid conflicts.
+
 ### MCP Tools
 
 When used as an MCP server, clauder provides these tools:
@@ -201,8 +222,8 @@ When used as an MCP server, clauder provides these tools:
 | `recall` | Search and retrieve stored facts |
 | `forget` | Delete a stored fact (with confirmation) |
 | `get_context` | Load all relevant context for the current directory |
-| `list_instances` | List other running Claude Code sessions |
-| `send_message` | Send a message to another instance |
+| `list_instances` | List other running Claude Code sessions (grouped by directory) |
+| `send_message` | Send a message to a specific instance or broadcast to all in a directory |
 | `get_messages` | Check for incoming messages |
 
 ## Data Storage

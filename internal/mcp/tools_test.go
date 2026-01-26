@@ -19,7 +19,7 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 		_ = os.RemoveAll(tmpDir)
 		t.Fatalf("failed to create store: %v", err)
 	}
-	server := NewServer(s, "test-instance", "/test/workdir")
+	server := NewServer(s, "test-instance", "test-directory-id", "/test/workdir")
 	cleanup := func() {
 		_ = s.Close()
 		_ = os.RemoveAll(tmpDir)
@@ -213,11 +213,11 @@ func TestToolSendMessage_Valid(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
-	// Register target instance
-	_ = server.store.RegisterInstance("target-instance", 123, "/target", "")
+	// Register target instance with a named instance ID (contains colon)
+	_ = server.store.RegisterInstance("target-dir-id:target", "target-dir-id", "target", "/target", "", 123)
 
 	result := server.toolSendMessage(map[string]interface{}{
-		"to":      "target-instance",
+		"to":      "target-dir-id:target",
 		"content": "hello!",
 	})
 
@@ -233,8 +233,9 @@ func TestToolSendMessage_InvalidInstance(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
+	// Use an ID with colon to target a specific instance (not broadcast)
 	result := server.toolSendMessage(map[string]interface{}{
-		"to":      "nonexistent-instance",
+		"to":      "nonexistent-dir:instance",
 		"content": "hello!",
 	})
 
@@ -276,12 +277,12 @@ func TestToolSendMessage_TooLarge(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
-	// Register target instance
-	_ = server.store.RegisterInstance("target-instance", 123, "/target", "")
+	// Register target instance with named ID
+	_ = server.store.RegisterInstance("target-dir-id:target", "target-dir-id", "target", "/target", "", 123)
 
 	largeContent := strings.Repeat("x", MaxMessageSize+1)
 	result := server.toolSendMessage(map[string]interface{}{
-		"to":      "target-instance",
+		"to":      "target-dir-id:target",
 		"content": largeContent,
 	})
 
@@ -314,8 +315,8 @@ func TestToolGetMessages_WithMessages(t *testing.T) {
 	defer cleanup()
 
 	// Register this instance and a sender
-	_ = server.store.RegisterInstance("test-instance", 1, "/test", "")
-	_ = server.store.RegisterInstance("sender", 2, "/sender", "")
+	_ = server.store.RegisterInstance("test-instance", "test-dir-id", "", "/test", "", 1)
+	_ = server.store.RegisterInstance("sender", "sender-dir-id", "", "/sender", "", 2)
 
 	// Send a message to our instance
 	_, _ = server.store.SendMessage("sender", "test-instance", "hello from sender!")
@@ -335,8 +336,8 @@ func TestToolGetMessages_MarksAsRead(t *testing.T) {
 	defer cleanup()
 
 	// Register instances
-	_ = server.store.RegisterInstance("test-instance", 1, "/test", "")
-	_ = server.store.RegisterInstance("sender", 2, "/sender", "")
+	_ = server.store.RegisterInstance("test-instance", "test-dir-id", "", "/test", "", 1)
+	_ = server.store.RegisterInstance("sender", "sender-dir-id", "", "/sender", "", 2)
 
 	// Send a message
 	_, _ = server.store.SendMessage("sender", "test-instance", "test message")
@@ -404,7 +405,7 @@ func TestToolListInstances_NoInstances(t *testing.T) {
 	if result.IsError {
 		t.Errorf("unexpected error: %s", result.Content[0].Text)
 	}
-	if !strings.Contains(result.Content[0].Text, "No other running instances") {
+	if !strings.Contains(result.Content[0].Text, "No running instances found") {
 		t.Errorf("unexpected result: %s", result.Content[0].Text)
 	}
 }
@@ -414,8 +415,8 @@ func TestToolListInstances_WithInstances(t *testing.T) {
 	defer cleanup()
 
 	// Register some instances
-	_ = server.store.RegisterInstance("instance-1", 123, "/dir1", "")
-	_ = server.store.RegisterInstance("instance-2", 456, "/dir2", "")
+	_ = server.store.RegisterInstance("instance-1", "dir1-id", "", "/dir1", "", 123)
+	_ = server.store.RegisterInstance("instance-2", "dir2-id", "", "/dir2", "", 456)
 
 	result := server.toolListInstances(map[string]interface{}{})
 

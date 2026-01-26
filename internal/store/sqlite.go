@@ -279,6 +279,8 @@ func (s *SQLiteStore) migrate() error {
 
 	CREATE TABLE IF NOT EXISTS instances (
 		id TEXT PRIMARY KEY,
+		directory_id TEXT NOT NULL DEFAULT '',
+		name TEXT NOT NULL DEFAULT '',
 		pid INTEGER NOT NULL,
 		directory TEXT NOT NULL,
 		tty TEXT DEFAULT '',
@@ -286,6 +288,8 @@ func (s *SQLiteStore) migrate() error {
 		started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		last_heartbeat DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+
+	CREATE INDEX IF NOT EXISTS idx_instances_directory_id ON instances(directory_id);
 
 	CREATE TABLE IF NOT EXISTS messages (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -315,6 +319,13 @@ func (s *SQLiteStore) migrate() error {
 	_, _ = s.db.Exec("ALTER TABLE instances ADD COLUMN tty TEXT DEFAULT ''")
 	_, _ = s.db.Exec("ALTER TABLE instances ADD COLUMN is_leader INTEGER DEFAULT 0")
 	_, _ = s.db.Exec("ALTER TABLE instances ADD COLUMN is_idle INTEGER DEFAULT 0")
+
+	// Migration: Add directory_id and name columns for multi-instance support
+	_, _ = s.db.Exec("ALTER TABLE instances ADD COLUMN directory_id TEXT NOT NULL DEFAULT ''")
+	_, _ = s.db.Exec("ALTER TABLE instances ADD COLUMN name TEXT NOT NULL DEFAULT ''")
+	// For existing instances, set directory_id to the existing id (which was the directory hash)
+	_, _ = s.db.Exec("UPDATE instances SET directory_id = id WHERE directory_id = ''")
+	_, _ = s.db.Exec("CREATE INDEX IF NOT EXISTS idx_instances_directory_id ON instances(directory_id)")
 
 	return nil
 }
@@ -598,11 +609,11 @@ func (s *SQLiteStore) SoftDeleteFact(id int64) error {
 
 // Instances
 
-func (s *SQLiteStore) RegisterInstance(id string, pid int, directory, tty string) error {
+func (s *SQLiteStore) RegisterInstance(id, directoryID, name, directory, tty string, pid int) error {
 	now := time.Now()
 	_, err := s.db.Exec(
-		"INSERT OR REPLACE INTO instances (id, pid, directory, tty, started_at, last_heartbeat) VALUES (?, ?, ?, ?, ?, ?)",
-		id, pid, directory, tty, now, now,
+		"INSERT OR REPLACE INTO instances (id, directory_id, name, pid, directory, tty, started_at, last_heartbeat) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		id, directoryID, name, pid, directory, tty, now, now,
 	)
 	return err
 }
@@ -618,7 +629,7 @@ func (s *SQLiteStore) UnregisterInstance(id string) error {
 }
 
 func (s *SQLiteStore) GetInstances() ([]Instance, error) {
-	rows, err := s.db.Query("SELECT id, pid, directory, tty, is_leader, is_idle, started_at, last_heartbeat FROM instances ORDER BY started_at DESC")
+	rows, err := s.db.Query("SELECT id, directory_id, name, pid, directory, tty, is_leader, is_idle, started_at, last_heartbeat FROM instances ORDER BY started_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -629,7 +640,7 @@ func (s *SQLiteStore) GetInstances() ([]Instance, error) {
 		var i Instance
 		var tty sql.NullString
 		var isLeader, isIdle int
-		if err := rows.Scan(&i.ID, &i.PID, &i.Directory, &tty, &isLeader, &isIdle, &i.StartedAt, &i.LastHeartbeat); err != nil {
+		if err := rows.Scan(&i.ID, &i.DirectoryID, &i.Name, &i.PID, &i.Directory, &tty, &isLeader, &isIdle, &i.StartedAt, &i.LastHeartbeat); err != nil {
 			return nil, err
 		}
 		i.TTY = tty.String
@@ -645,9 +656,9 @@ func (s *SQLiteStore) GetInstance(id string) (*Instance, error) {
 	var tty sql.NullString
 	var isLeader, isIdle int
 	err := s.db.QueryRow(
-		"SELECT id, pid, directory, tty, is_leader, is_idle, started_at, last_heartbeat FROM instances WHERE id = ?",
+		"SELECT id, directory_id, name, pid, directory, tty, is_leader, is_idle, started_at, last_heartbeat FROM instances WHERE id = ?",
 		id,
-	).Scan(&i.ID, &i.PID, &i.Directory, &tty, &isLeader, &isIdle, &i.StartedAt, &i.LastHeartbeat)
+	).Scan(&i.ID, &i.DirectoryID, &i.Name, &i.PID, &i.Directory, &tty, &isLeader, &isIdle, &i.StartedAt, &i.LastHeartbeat)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -664,6 +675,46 @@ func (s *SQLiteStore) CleanupStaleInstances(maxAge time.Duration) error {
 	cutoff := time.Now().Add(-maxAge)
 	_, err := s.db.Exec("DELETE FROM instances WHERE last_heartbeat < ?", cutoff)
 	return err
+}
+
+func (s *SQLiteStore) GetInstancesByDirectory(directoryID string) ([]Instance, error) {
+	rows, err := s.db.Query(
+		"SELECT id, directory_id, name, pid, directory, tty, is_leader, is_idle, started_at, last_heartbeat FROM instances WHERE directory_id = ? ORDER BY started_at DESC",
+		directoryID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var instances []Instance
+	for rows.Next() {
+		var i Instance
+		var tty sql.NullString
+		var isLeader, isIdle int
+		if err := rows.Scan(&i.ID, &i.DirectoryID, &i.Name, &i.PID, &i.Directory, &tty, &isLeader, &isIdle, &i.StartedAt, &i.LastHeartbeat); err != nil {
+			return nil, err
+		}
+		i.TTY = tty.String
+		i.IsLeader = isLeader == 1
+		i.IsIdle = isIdle == 1
+		instances = append(instances, i)
+	}
+	return instances, rows.Err()
+}
+
+func (s *SQLiteStore) CheckDirectoryHasActiveInstance(directoryID string) (bool, error) {
+	// Check if there's an active instance (heartbeat within last 5 minutes) in this directory
+	cutoff := time.Now().Add(-5 * time.Minute)
+	var count int
+	err := s.db.QueryRow(
+		"SELECT COUNT(*) FROM instances WHERE directory_id = ? AND last_heartbeat > ?",
+		directoryID, cutoff,
+	).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // TryBecomeLeader attempts to become leader if there is no current leader
@@ -734,9 +785,9 @@ func (s *SQLiteStore) GetLeader() (*Instance, error) {
 	var tty sql.NullString
 	var isLeader, isIdle int
 	err := s.db.QueryRow(
-		"SELECT id, pid, directory, tty, is_leader, is_idle, started_at, last_heartbeat FROM instances WHERE is_leader = 1 AND last_heartbeat > ?",
+		"SELECT id, directory_id, name, pid, directory, tty, is_leader, is_idle, started_at, last_heartbeat FROM instances WHERE is_leader = 1 AND last_heartbeat > ?",
 		cutoff,
-	).Scan(&i.ID, &i.PID, &i.Directory, &tty, &isLeader, &isIdle, &i.StartedAt, &i.LastHeartbeat)
+	).Scan(&i.ID, &i.DirectoryID, &i.Name, &i.PID, &i.Directory, &tty, &isLeader, &isIdle, &i.StartedAt, &i.LastHeartbeat)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -767,7 +818,7 @@ func (s *SQLiteStore) GetIdleInstancesWithUnreadMessages() ([]Instance, error) {
 	// 2. Have unread messages
 	// 3. Have a valid TTY
 	query := `
-		SELECT DISTINCT i.id, i.pid, i.directory, i.tty, i.is_leader, i.is_idle, i.started_at, i.last_heartbeat
+		SELECT DISTINCT i.id, i.directory_id, i.name, i.pid, i.directory, i.tty, i.is_leader, i.is_idle, i.started_at, i.last_heartbeat
 		FROM instances i
 		JOIN messages m ON m.to_instance = i.id
 		WHERE i.is_idle = 1
@@ -785,7 +836,7 @@ func (s *SQLiteStore) GetIdleInstancesWithUnreadMessages() ([]Instance, error) {
 		var i Instance
 		var tty sql.NullString
 		var isLeader, isIdle int
-		if err := rows.Scan(&i.ID, &i.PID, &i.Directory, &tty, &isLeader, &isIdle, &i.StartedAt, &i.LastHeartbeat); err != nil {
+		if err := rows.Scan(&i.ID, &i.DirectoryID, &i.Name, &i.PID, &i.Directory, &tty, &isLeader, &isIdle, &i.StartedAt, &i.LastHeartbeat); err != nil {
 			return nil, err
 		}
 		i.TTY = tty.String

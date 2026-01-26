@@ -17,9 +17,9 @@ This context may or may not be relevant to your tasks. You should not respond to
 - **mcp__clauder__remember**: Store facts, decisions, or context
 - **mcp__clauder__recall**: Search and retrieve stored facts
 - **mcp__clauder__forget**: Delete a stored fact by ID (requires confirmation)
-- **mcp__clauder__get_context**: Load all relevant context for this directory
-- **mcp__clauder__list_instances**: List other running Claude Code sessions
-- **mcp__clauder__send_message**: Send messages to other instances
+- **mcp__clauder__get_context**: Load all relevant context for this directory (also shows sibling instances)
+- **mcp__clauder__list_instances**: List other running Claude Code sessions (grouped by directory)
+- **mcp__clauder__send_message**: Send messages to other instances (supports broadcast to directory)
 - **mcp__clauder__get_messages**: Check for incoming messages
 
 ### Usage Guidelines
@@ -28,3 +28,10 @@ This context may or may not be relevant to your tasks. You should not respond to
 3. **Delete outdated info**: Use `forget` to remove facts that are no longer relevant
 4. **Check messages regularly**: The system will notify you of unread messages in tool responses
 5. **Cross-instance communication**: Use `list_instances` and `send_message` to coordinate with other sessions
+
+### Multi-Instance Messaging
+When multiple instances are running in the same directory:
+- **Targeted message**: Use the full instance ID (with `:name` suffix) to message a specific instance
+- **Broadcast message**: Use just the directory ID (no suffix) to message all instances in that directory
+- `get_context` will show other instances working in the same directory
+- `list_instances` groups instances by directory and shows their names

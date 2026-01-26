@@ -7,7 +7,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/gorilla/websocket v1.5.3
 	github.com/pelletier/go-toml/v2 v2.2.4
-	github.com/posthog/posthog-go v1.8.2
+	github.com/posthog/posthog-go v1.9.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/term v0.39.0
 	modernc.org/sqlite v1.44.0
@@ -34,6 +34,7 @@ require (
 	github.com/blevesearch/zapx/v15 v15.4.2 // indirect
 	github.com/blevesearch/zapx/v16 v16.2.8 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect

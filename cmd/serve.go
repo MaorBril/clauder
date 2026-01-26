@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"context"
-	"crypto/sha256"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -12,8 +12,15 @@ import (
 
 	"github.com/maorbril/clauder/internal/mcp"
 	"github.com/maorbril/clauder/internal/store"
+	"github.com/maorbril/clauder/internal/telemetry"
 	"github.com/spf13/cobra"
 )
+
+var instanceName string
+
+func init() {
+	serveCmd.Flags().StringVar(&instanceName, "name", "", "Instance name for multi-instance setups (e.g., 'backend', 'frontend')")
+}
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
@@ -35,15 +42,47 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	// Use a stable instance ID based on directory
-	// This ensures messages persist across restarts
-	instanceID := generateInstanceID(workDir)
+	// Check env var for instance name (passed from wrap command)
+	name := instanceName
+	if name == "" {
+		name = os.Getenv("CLAUDER_INSTANCE_NAME")
+	}
+
+	// Generate directory ID (used for grouping instances in same directory)
+	directoryID := generateDirectoryID(workDir)
+
+	// Clean up stale instances before checking for collisions
+	_ = s.CleanupStaleInstances(5 * time.Minute)
+
+	// Track whether user explicitly named this instance
+	explicitlyNamed := name != ""
+	autoNamed := false
+
+	// Handle collision detection for unnamed instances
+	if name == "" {
+		hasActive, err := s.CheckDirectoryHasActiveInstance(directoryID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[clauder] WARNING: failed to check for existing instances: %v\n", err)
+		} else if hasActive {
+			// Collision detected - auto-generate a unique name
+			name = generateShortID()
+			autoNamed = true
+			fmt.Fprintf(os.Stderr, "[clauder] Multiple instances detected in directory, using auto-generated name: %s\n", name)
+			telemetry.TrackMultiInstance()
+		}
+	}
+
+	// Track serve usage
+	telemetry.TrackServe(explicitlyNamed, autoNamed)
+
+	// Generate instance ID (includes name if provided)
+	instanceID := generateInstanceID(directoryID, name)
 
 	// Use PID-based index ID for Bleve to ensure each process gets its own index
 	// This prevents file locking issues when multiple processes run in the same directory
 	indexID := fmt.Sprintf("%d", os.Getpid())
 
-	fmt.Fprintf(os.Stderr, "[clauder] PID=%d starting, workDir=%s, indexID=%s\n", os.Getpid(), workDir, indexID)
+	fmt.Fprintf(os.Stderr, "[clauder] PID=%d starting, workDir=%s, instanceID=%s, indexID=%s\n", os.Getpid(), workDir, instanceID, indexID)
 
 	// Initialize per-process Bleve index for full-text search
 	fmt.Fprintf(os.Stderr, "[clauder] Initializing Bleve index...\n")
@@ -55,7 +94,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// Register this instance
-	if err := s.RegisterInstance(instanceID, os.Getpid(), workDir, ""); err != nil {
+	if err := s.RegisterInstance(instanceID, directoryID, name, workDir, "", os.Getpid()); err != nil {
 		return fmt.Errorf("failed to register instance: %w", err)
 	}
 
@@ -88,7 +127,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}()
 
 	// Run MCP server
-	server := mcp.NewServer(s, instanceID, workDir)
+	server := mcp.NewServer(s, instanceID, directoryID, workDir)
 	if err := server.Run(); err != nil {
 		_ = s.UnregisterInstance(instanceID)
 		return err
@@ -98,11 +137,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// generateInstanceID creates a stable instance ID based on directory
-// This ensures messages persist across Claude Code restarts
-func generateInstanceID(directory string) string {
-	hash := sha256.Sum256([]byte(directory))
-	// Use first 16 bytes (32 hex chars) for a readable ID
-	return hex.EncodeToString(hash[:16])
+// generateInstanceID creates the full instance ID
+// Format: directoryID (unnamed) or directoryID:name (named)
+func generateInstanceID(directoryID, name string) string {
+	if name == "" {
+		return directoryID
+	}
+	return directoryID + ":" + name
+}
+
+// generateShortID creates a short random ID for auto-named instances
+func generateShortID() string {
+	b := make([]byte, 2)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 

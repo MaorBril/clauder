@@ -18,12 +18,13 @@ const (
 )
 
 type Server struct {
-	store      store.Store
-	instanceID string
-	workDir    string
-	reader     *bufio.Reader
-	writer     io.Writer
-	mu         sync.Mutex
+	store       store.Store
+	instanceID  string
+	directoryID string
+	workDir     string
+	reader      *bufio.Reader
+	writer      io.Writer
+	mu          sync.Mutex
 }
 
 type Request struct {
@@ -114,13 +115,14 @@ type ContentBlock struct {
 	Text string `json:"text"`
 }
 
-func NewServer(s store.Store, instanceID, workDir string) *Server {
+func NewServer(s store.Store, instanceID, directoryID, workDir string) *Server {
 	return &Server{
-		store:      s,
-		instanceID: instanceID,
-		workDir:    workDir,
-		reader:     bufio.NewReader(os.Stdin),
-		writer:     os.Stdout,
+		store:       s,
+		instanceID:  instanceID,
+		directoryID: directoryID,
+		workDir:     workDir,
+		reader:      bufio.NewReader(os.Stdin),
+		writer:      os.Stdout,
 	}
 }
 
@@ -266,17 +268,21 @@ func (s *Server) handleToolsList(req *Request) {
 		},
 		{
 			Name:        "send_message",
-			Description: "Send a message to another running clauder instance. Use this to communicate with Claude Code sessions in other directories.",
+			Description: "Send a message to another running clauder instance. Use a full instance ID (with :name suffix) to target a specific instance, or use a directory ID (without suffix) to broadcast to all instances in that directory.",
 			InputSchema: InputSchema{
 				Type: "object",
 				Properties: map[string]Property{
 					"to": {
 						Type:        "string",
-						Description: "The instance ID to send the message to",
+						Description: "Target instance ID (specific) or directory ID (broadcast to all instances in directory)",
 					},
 					"content": {
 						Type:        "string",
 						Description: "The message content",
+					},
+					"broadcast": {
+						Type:        "boolean",
+						Description: "If true, send to all instances in the target directory (default: false)",
 					},
 				},
 				Required: []string{"to", "content"},

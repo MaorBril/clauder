@@ -13,9 +13,16 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/maorbril/clauder/internal/store"
+	"github.com/maorbril/clauder/internal/telemetry"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
+
+var wrapInstanceName string
+
+func init() {
+	wrapCmd.Flags().StringVar(&wrapInstanceName, "name", "", "Instance name for multi-instance setups (e.g., 'backend', 'frontend')")
+}
 
 var wrapCmd = &cobra.Command{
 	Use:   "wrap [claude args...]",
@@ -118,27 +125,29 @@ func (t *inputTracker) CanInject(idleTimeout time.Duration) bool {
 type messageWatcher struct {
 	store        store.Store
 	workDir      string
+	directoryID  string
+	instanceName string
 	ptmx         *os.File
 	tracker      *inputTracker
 	stopCh       chan struct{}
-	prompt       string
 	checkEvery   time.Duration
 	idleTime     time.Duration
 	cooldown     time.Duration
 	lastInjected time.Time
 }
 
-func newMessageWatcher(s store.Store, workDir string, ptmx *os.File, tracker *inputTracker) *messageWatcher {
+func newMessageWatcher(s store.Store, workDir, directoryID, instanceName string, ptmx *os.File, tracker *inputTracker) *messageWatcher {
 	return &messageWatcher{
-		store:      s,
-		workDir:    workDir,
-		ptmx:       ptmx,
-		tracker:    tracker,
-		stopCh:     make(chan struct{}),
-		prompt:     "[You have a new message] - Read your clauder messages using get_messages and respond to them.",
-		checkEvery: 5 * time.Second,
-		idleTime:   2 * time.Second,
-		cooldown:   60 * time.Second, // Don't re-inject for at least 60 seconds
+		store:        s,
+		workDir:      workDir,
+		directoryID:  directoryID,
+		instanceName: instanceName,
+		ptmx:         ptmx,
+		tracker:      tracker,
+		stopCh:       make(chan struct{}),
+		checkEvery:   5 * time.Second,
+		idleTime:     2 * time.Second,
+		cooldown:     60 * time.Second, // Don't re-inject for at least 60 seconds
 	}
 }
 
@@ -172,29 +181,33 @@ func (w *messageWatcher) checkAndInject() {
 		return
 	}
 
-	// Find instances in our directory
-	instances, err := w.store.GetInstances()
+	// Query instances in our directory using directoryID
+	instances, err := w.store.GetInstancesByDirectory(w.directoryID)
 	if err != nil {
 		return
 	}
 
-	// Check for unread messages to any instance in our directory
-	hasUnread := false
+	// Check for unread messages, tracking which instances have them
+	var unreadFor []string
 	for _, inst := range instances {
-		if inst.Directory != w.workDir {
+		// If we have a specific name, only check messages for instances with that name
+		if w.instanceName != "" && inst.Name != w.instanceName {
 			continue
 		}
+
 		messages, err := w.store.GetMessages(inst.ID, true) // unread only
-		if err != nil {
+		if err != nil || len(messages) == 0 {
 			continue
 		}
-		if len(messages) > 0 {
-			hasUnread = true
-			break
+
+		name := inst.Name
+		if name == "" {
+			name = "primary"
 		}
+		unreadFor = append(unreadFor, name)
 	}
 
-	if !hasUnread {
+	if len(unreadFor) == 0 {
 		return
 	}
 
@@ -203,8 +216,18 @@ func (w *messageWatcher) checkAndInject() {
 		return
 	}
 
-	// Inject the prompt
-	w.inject(w.prompt)
+	// Build contextual prompt
+	var prompt string
+	if w.instanceName != "" {
+		// Named instance - simple prompt
+		prompt = "[You have a new message] - Read your clauder messages using get_messages and respond to them."
+	} else if len(unreadFor) == 1 {
+		prompt = fmt.Sprintf("[New message for '%s'] - Read your clauder messages using get_messages.", unreadFor[0])
+	} else {
+		prompt = fmt.Sprintf("[Messages for %d instances] - Read your clauder messages using get_messages.", len(unreadFor))
+	}
+
+	w.inject(prompt)
 	w.lastInjected = time.Now()
 }
 
@@ -232,10 +255,16 @@ func runWrap(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("wrap command requires an interactive terminal")
 	}
 
+	// Track wrap usage
+	telemetry.TrackWrap(wrapInstanceName != "")
+
 	workDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
 	}
+
+	// Generate directory ID for message queries
+	directoryID := generateDirectoryID(workDir)
 
 	// Open the store for message monitoring
 	dataDir := getDataDir()
@@ -248,6 +277,11 @@ func runWrap(cmd *cobra.Command, args []string) error {
 	// Create the claude command with all passed arguments
 	c := exec.Command("claude", args...)
 	c.Dir = workDir
+
+	// Pass instance name to inner session via environment variable
+	if wrapInstanceName != "" {
+		c.Env = append(os.Environ(), "CLAUDER_INSTANCE_NAME="+wrapInstanceName)
+	}
 
 	// Start the command with a PTY
 	ptmx, err := pty.Start(c)
@@ -293,7 +327,7 @@ func runWrap(cmd *cobra.Command, args []string) error {
 	tracker := newInputTracker()
 
 	// Start message watcher
-	watcher := newMessageWatcher(s, workDir, ptmx, tracker)
+	watcher := newMessageWatcher(s, workDir, directoryID, wrapInstanceName, ptmx, tracker)
 	watcher.Start()
 	defer watcher.Stop()
 

@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 
@@ -56,4 +58,12 @@ func getDataDir() string {
 		os.Exit(1)
 	}
 	return home + "/.clauder"
+}
+
+// generateDirectoryID creates a stable directory ID based on path
+// This is used for grouping instances in the same directory
+func generateDirectoryID(directory string) string {
+	hash := sha256.Sum256([]byte(directory))
+	// Use first 16 bytes (32 hex chars) for a readable ID
+	return hex.EncodeToString(hash[:16])
 }

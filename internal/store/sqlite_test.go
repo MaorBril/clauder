@@ -242,7 +242,7 @@ func TestInstance_Lifecycle(t *testing.T) {
 	defer cleanup()
 
 	// Register
-	err := store.RegisterInstance("test-instance-id", 12345, "/test/dir", "/dev/ttys000")
+	err := store.RegisterInstance("test-instance-id", "test-dir-id", "", "/test/dir", "/dev/ttys000", 12345)
 	if err != nil {
 		t.Fatalf("RegisterInstance failed: %v", err)
 	}
@@ -297,8 +297,8 @@ func TestInstance_Cleanup(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
 
-	_ = store.RegisterInstance("old-instance", 111, "/old", "")
-	_ = store.RegisterInstance("new-instance", 222, "/new", "")
+	_ = store.RegisterInstance("old-instance", "old-dir-id", "", "/old", "", 111)
+	_ = store.RegisterInstance("new-instance", "new-dir-id", "", "/new", "", 222)
 
 	// Manually make one instance stale by setting last_heartbeat to 10 minutes ago
 	staleTime := time.Now().Add(-10 * time.Minute)
@@ -327,8 +327,8 @@ func TestMessage_SendAndReceive(t *testing.T) {
 	defer cleanup()
 
 	// Setup instances
-	_ = store.RegisterInstance("sender", 1, "/sender", "")
-	_ = store.RegisterInstance("receiver", 2, "/receiver", "")
+	_ = store.RegisterInstance("sender", "sender-dir-id", "", "/sender", "", 1)
+	_ = store.RegisterInstance("receiver", "receiver-dir-id", "", "/receiver", "", 2)
 
 	// Send message
 	msg, err := store.SendMessage("sender", "receiver", "hello!")
@@ -359,8 +359,8 @@ func TestMessage_MarkRead(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
 
-	_ = store.RegisterInstance("sender", 1, "/sender", "")
-	_ = store.RegisterInstance("receiver", 2, "/receiver", "")
+	_ = store.RegisterInstance("sender", "sender-dir-id", "", "/sender", "", 1)
+	_ = store.RegisterInstance("receiver", "receiver-dir-id", "", "/receiver", "", 2)
 
 	msg, _ := store.SendMessage("sender", "receiver", "test message")
 

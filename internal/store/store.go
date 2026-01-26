@@ -16,6 +16,8 @@ type Fact struct {
 
 type Instance struct {
 	ID            string    `json:"id"`
+	DirectoryID   string    `json:"directory_id"`
+	Name          string    `json:"name,omitempty"`
 	PID           int       `json:"pid"`
 	Directory     string    `json:"directory"`
 	TTY           string    `json:"tty,omitempty"`
@@ -43,11 +45,13 @@ type Store interface {
 	SoftDeleteFact(id int64) error
 
 	// Instances
-	RegisterInstance(id string, pid int, directory, tty string) error
+	RegisterInstance(id, directoryID, name, directory, tty string, pid int) error
 	Heartbeat(id string) error
 	UnregisterInstance(id string) error
 	GetInstances() ([]Instance, error)
 	GetInstance(id string) (*Instance, error)
+	GetInstancesByDirectory(directoryID string) ([]Instance, error)
+	CheckDirectoryHasActiveInstance(directoryID string) (bool, error)
 	CleanupStaleInstances(maxAge time.Duration) error
 
 	// Leader election

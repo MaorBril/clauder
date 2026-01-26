@@ -227,6 +227,26 @@ func (s *Server) toolGetContext(args map[string]interface{}) ToolResult {
 		sb.WriteString("No stored context yet. Use the `remember` tool to store facts and decisions.\n")
 	}
 
+	// Show sibling instances in the same directory
+	if s.directoryID != "" {
+		siblings, _ := s.store.GetInstancesByDirectory(s.directoryID)
+		if len(siblings) > 1 {
+			sb.WriteString("\n## Other Instances in This Directory\n\n")
+			for _, sib := range siblings {
+				if sib.ID == s.instanceID {
+					continue
+				}
+				displayName := sib.Name
+				if displayName == "" {
+					displayName = "(primary)"
+				}
+				sb.WriteString(fmt.Sprintf("- **%s** [%s] - last active %s\n",
+					sib.ID, displayName, sib.LastHeartbeat.Format("15:04:05")))
+			}
+			sb.WriteString("\nUse `send_message` to communicate with these instances.\n")
+		}
+	}
+
 	return textResult(sb.String())
 }
 
@@ -241,24 +261,73 @@ func (s *Server) toolListInstances(args map[string]interface{}) ToolResult {
 	}
 
 	if len(instances) == 0 {
-		return textResult("No other running instances found.")
+		return textResult("No running instances found.")
+	}
+
+	// Group instances by directory
+	byDir := make(map[string][]struct {
+		id        string
+		name      string
+		started   time.Time
+		heartbeat time.Time
+		isCurrent bool
+	})
+
+	for _, inst := range instances {
+		byDir[inst.Directory] = append(byDir[inst.Directory], struct {
+			id        string
+			name      string
+			started   time.Time
+			heartbeat time.Time
+			isCurrent bool
+		}{
+			id:        inst.ID,
+			name:      inst.Name,
+			started:   inst.StartedAt,
+			heartbeat: inst.LastHeartbeat,
+			isCurrent: inst.ID == s.instanceID,
+		})
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d running instance(s):\n\n", len(instances)))
+	sb.WriteString(fmt.Sprintf("# Running Instances (%d total)\n\n", len(instances)))
 
-	for _, inst := range instances {
-		status := ""
-		if inst.ID == s.instanceID {
-			status = " (this instance)"
+	for dir, dirInstances := range byDir {
+		sb.WriteString(fmt.Sprintf("## %s\n", dir))
+		if len(dirInstances) > 1 {
+			sb.WriteString(fmt.Sprintf("*(directory ID for broadcast: %s)*\n", s.getDirectoryIDFromInstanceID(dirInstances[0].id)))
 		}
-		sb.WriteString(fmt.Sprintf("**%s**%s\n", inst.ID, status))
-		sb.WriteString(fmt.Sprintf("  Directory: %s\n", inst.Directory))
-		sb.WriteString(fmt.Sprintf("  Started: %s\n", inst.StartedAt.Format("2006-01-02 15:04:05")))
-		sb.WriteString(fmt.Sprintf("  Last heartbeat: %s\n\n", inst.LastHeartbeat.Format("15:04:05")))
+		sb.WriteString("\n")
+
+		for _, inst := range dirInstances {
+			marker := ""
+			if inst.isCurrent {
+				marker = " ← **this instance**"
+			}
+
+			displayName := inst.name
+			if displayName == "" {
+				displayName = "(primary)"
+			}
+
+			sb.WriteString(fmt.Sprintf("- **%s** [%s]%s\n", inst.id, displayName, marker))
+			sb.WriteString(fmt.Sprintf("  Started: %s | Last heartbeat: %s\n",
+				inst.started.Format("15:04:05"),
+				inst.heartbeat.Format("15:04:05")))
+		}
+		sb.WriteString("\n")
 	}
 
 	return textResult(sb.String())
+}
+
+// getDirectoryIDFromInstanceID extracts the directory ID from an instance ID
+// Instance ID format: "directoryID" or "directoryID:name"
+func (s *Server) getDirectoryIDFromInstanceID(instanceID string) string {
+	if idx := strings.Index(instanceID, ":"); idx != -1 {
+		return instanceID[:idx]
+	}
+	return instanceID
 }
 
 func (s *Server) toolSendMessage(args map[string]interface{}) ToolResult {
@@ -277,7 +346,41 @@ func (s *Server) toolSendMessage(args map[string]interface{}) ToolResult {
 		return errorResult(fmt.Sprintf("message exceeds maximum size of %d bytes", MaxMessageSize))
 	}
 
-	// Check if target instance exists
+	broadcast, _ := args["broadcast"].(bool)
+
+	// Check if this looks like a directory ID (no colon) or explicit broadcast
+	isDirectoryTarget := broadcast || !strings.Contains(to, ":")
+
+	if isDirectoryTarget {
+		// Broadcast to all instances in the directory
+		instances, err := s.store.GetInstancesByDirectory(to)
+		if err != nil {
+			return errorResult(fmt.Sprintf("failed to find instances: %v", err))
+		}
+
+		if len(instances) == 0 {
+			return errorResult(fmt.Sprintf("no active instances found in directory '%s'", to))
+		}
+
+		sent := 0
+		for _, inst := range instances {
+			if inst.ID == s.instanceID {
+				continue // Don't send to self
+			}
+			if _, err := s.store.SendMessage(s.instanceID, inst.ID, content); err == nil {
+				sent++
+			}
+		}
+
+		if sent == 0 {
+			return textResult("No other instances to send to (you may be the only instance in this directory)")
+		}
+
+		telemetry.TrackBroadcast(sent)
+		return textResult(fmt.Sprintf("Message broadcast to %d instance(s) in directory", sent))
+	}
+
+	// Specific instance target
 	target, err := s.store.GetInstance(to)
 	if err != nil {
 		return errorResult(fmt.Sprintf("failed to find instance: %v", err))

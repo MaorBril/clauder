@@ -112,6 +112,33 @@ func TrackError(context string) {
 	})
 }
 
+// TrackWrap tracks wrap command usage
+func TrackWrap(named bool) {
+	Track("wrap", map[string]interface{}{
+		"named": named,
+	})
+}
+
+// TrackServe tracks serve command with instance configuration
+func TrackServe(named bool, autoNamed bool) {
+	Track("serve", map[string]interface{}{
+		"named":      named,      // user explicitly provided --name
+		"auto_named": autoNamed,  // system auto-generated name due to collision
+	})
+}
+
+// TrackMultiInstance tracks multi-instance collision detection
+func TrackMultiInstance() {
+	Track("multi_instance_collision", nil)
+}
+
+// TrackBroadcast tracks broadcast message usage
+func TrackBroadcast(instanceCount int) {
+	Track("broadcast_message", map[string]interface{}{
+		"instance_count": instanceCount,
+	})
+}
+
 // generateAnonID creates a stable anonymous ID for this machine
 func generateAnonID() string {
 	// Use home directory + hostname as a stable identifier
