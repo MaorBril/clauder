@@ -386,6 +386,31 @@ func (s *Server) toolSendMessage(args map[string]interface{}) ToolResult {
 		return errorResult(fmt.Sprintf("failed to find instance: %v", err))
 	}
 	if target == nil {
+		// Instance not found - check if there are siblings to suggest
+		dirID := s.getDirectoryIDFromInstanceID(to)
+		siblings, _ := s.store.GetInstancesByDirectory(dirID)
+
+		if len(siblings) > 0 {
+			// Filter out self and build suggestion list
+			var names []string
+			for _, sib := range siblings {
+				if sib.ID != s.instanceID {
+					displayName := sib.Name
+					if displayName == "" {
+						displayName = "(primary)"
+					}
+					names = append(names, fmt.Sprintf("%s [%s]", sib.ID, displayName))
+				}
+			}
+
+			if len(names) > 0 {
+				return errorResult(fmt.Sprintf(
+					"Instance '%s' not found. Other instances in this directory: %s. "+
+						"Use directory ID '%s' to broadcast to all.",
+					to, strings.Join(names, ", "), dirID))
+			}
+		}
+
 		return errorResult(fmt.Sprintf("instance '%s' not found", to))
 	}
 
