@@ -3,6 +3,8 @@
 package cmd
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -255,9 +257,6 @@ func runWrap(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("wrap command requires an interactive terminal")
 	}
 
-	// Track wrap usage
-	telemetry.TrackWrap(wrapInstanceName != "")
-
 	workDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
@@ -265,6 +264,15 @@ func runWrap(cmd *cobra.Command, args []string) error {
 
 	// Generate directory ID for message queries
 	directoryID := generateDirectoryID(workDir)
+
+	// Generate session ID and set telemetry context for wrap
+	sessionIDBytes := make([]byte, 8)
+	_, _ = rand.Read(sessionIDBytes)
+	wrapSessionID := hex.EncodeToString(sessionIDBytes)
+	telemetry.SetSessionContext(wrapSessionID, directoryID, wrapInstanceName)
+
+	// Track wrap usage (now with session context)
+	telemetry.TrackWrap(wrapInstanceName != "")
 
 	// Open the store for message monitoring
 	dataDir := getDataDir()
