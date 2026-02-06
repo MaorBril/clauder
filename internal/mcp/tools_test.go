@@ -431,6 +431,288 @@ func TestToolListInstances_WithInstances(t *testing.T) {
 	}
 }
 
+// CompactContext tool tests
+
+func TestToolCompactContext_Empty(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	result := server.toolCompactContext(map[string]interface{}{})
+
+	if result.IsError {
+		t.Errorf("unexpected error: %s", result.Content[0].Text)
+	}
+	if !strings.Contains(result.Content[0].Text, "Nothing to compact") {
+		t.Errorf("unexpected result: %s", result.Content[0].Text)
+	}
+}
+
+func TestToolCompactContext_WithFacts(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	server.toolRemember(map[string]interface{}{
+		"fact": "important architecture decision",
+		"tags": []interface{}{"architecture"},
+	})
+	server.toolRemember(map[string]interface{}{
+		"fact": "stale PR note",
+	})
+
+	result := server.toolCompactContext(map[string]interface{}{})
+
+	if result.IsError {
+		t.Errorf("unexpected error: %s", result.Content[0].Text)
+	}
+	text := result.Content[0].Text
+	if !strings.Contains(text, "Found 2 facts") {
+		t.Errorf("expected 'Found 2 facts', got: %s", text)
+	}
+	if !strings.Contains(text, "important architecture decision") {
+		t.Error("expected to find first fact content")
+	}
+	if !strings.Contains(text, "stale PR note") {
+		t.Error("expected to find second fact content")
+	}
+	if !strings.Contains(text, "architecture") {
+		t.Error("expected to find tag")
+	}
+	if !strings.Contains(text, "## Instructions") {
+		t.Error("expected analysis instructions")
+	}
+	if !strings.Contains(text, "bulk_forget") {
+		t.Error("expected reference to bulk_forget tool")
+	}
+}
+
+func TestToolCompactContext_OnlyCurrentDir(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	// Add fact in current dir
+	server.toolRemember(map[string]interface{}{"fact": "local fact"})
+	// Add fact in different dir
+	_, _ = server.store.AddFact("other dir fact", nil, "/other/dir")
+
+	result := server.toolCompactContext(map[string]interface{}{})
+
+	text := result.Content[0].Text
+	if !strings.Contains(text, "local fact") {
+		t.Error("expected to find local fact")
+	}
+	if strings.Contains(text, "other dir fact") {
+		t.Error("should not contain facts from other directories")
+	}
+}
+
+// BulkForget tool tests
+
+func TestToolBulkForget_Valid(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	server.toolRemember(map[string]interface{}{"fact": "fact one"})
+	server.toolRemember(map[string]interface{}{"fact": "fact two"})
+	server.toolRemember(map[string]interface{}{"fact": "fact three"})
+
+	// Get all facts to find IDs
+	facts, _ := server.store.GetAllFactsByDir("/test/workdir")
+	if len(facts) != 3 {
+		t.Fatalf("expected 3 facts, got %d", len(facts))
+	}
+
+	// Delete first and third
+	result := server.toolBulkForget(map[string]interface{}{
+		"ids": []interface{}{float64(facts[0].ID), float64(facts[2].ID)},
+	})
+
+	if result.IsError {
+		t.Errorf("unexpected error: %s", result.Content[0].Text)
+	}
+	if !strings.Contains(result.Content[0].Text, "Deleted 2 fact(s)") {
+		t.Errorf("unexpected result: %s", result.Content[0].Text)
+	}
+
+	// Verify only the second fact remains
+	remaining, _ := server.store.GetAllFactsByDir("/test/workdir")
+	if len(remaining) != 1 {
+		t.Errorf("expected 1 remaining fact, got %d", len(remaining))
+	}
+	if remaining[0].Content != "fact two" {
+		t.Errorf("expected 'fact two' to remain, got '%s'", remaining[0].Content)
+	}
+}
+
+func TestToolBulkForget_EmptyIDs(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	result := server.toolBulkForget(map[string]interface{}{
+		"ids": []interface{}{},
+	})
+
+	if !result.IsError {
+		t.Error("expected error for empty IDs")
+	}
+}
+
+func TestToolBulkForget_MissingIDs(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	result := server.toolBulkForget(map[string]interface{}{})
+
+	if !result.IsError {
+		t.Error("expected error for missing IDs")
+	}
+}
+
+func TestToolBulkForget_InvalidIDType(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	result := server.toolBulkForget(map[string]interface{}{
+		"ids": []interface{}{"not-a-number"},
+	})
+
+	if !result.IsError {
+		t.Error("expected error for invalid ID type")
+	}
+}
+
+// BulkRemember tool tests
+
+func TestToolBulkRemember_Valid(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	result := server.toolBulkRemember(map[string]interface{}{
+		"facts": []interface{}{
+			map[string]interface{}{"fact": "condensed fact one", "tags": []interface{}{"compacted"}},
+			map[string]interface{}{"fact": "condensed fact two"},
+		},
+	})
+
+	if result.IsError {
+		t.Errorf("unexpected error: %s", result.Content[0].Text)
+	}
+	text := result.Content[0].Text
+	if !strings.Contains(text, "Stored 2 fact(s)") {
+		t.Errorf("unexpected result: %s", text)
+	}
+	if !strings.Contains(text, "condensed fact one") {
+		t.Error("expected to find first fact in result")
+	}
+	if !strings.Contains(text, "condensed fact two") {
+		t.Error("expected to find second fact in result")
+	}
+
+	// Verify stored in the right directory
+	facts, _ := server.store.GetAllFactsByDir("/test/workdir")
+	if len(facts) != 2 {
+		t.Errorf("expected 2 stored facts, got %d", len(facts))
+	}
+}
+
+func TestToolBulkRemember_EmptyArray(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	result := server.toolBulkRemember(map[string]interface{}{
+		"facts": []interface{}{},
+	})
+
+	if !result.IsError {
+		t.Error("expected error for empty facts array")
+	}
+}
+
+func TestToolBulkRemember_MissingFacts(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	result := server.toolBulkRemember(map[string]interface{}{})
+
+	if !result.IsError {
+		t.Error("expected error for missing facts")
+	}
+}
+
+func TestToolBulkRemember_InvalidEntry(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	result := server.toolBulkRemember(map[string]interface{}{
+		"facts": []interface{}{"not an object"},
+	})
+
+	if !result.IsError {
+		t.Error("expected error for invalid entry")
+	}
+}
+
+func TestToolBulkRemember_EmptyFactContent(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	result := server.toolBulkRemember(map[string]interface{}{
+		"facts": []interface{}{
+			map[string]interface{}{"fact": ""},
+		},
+	})
+
+	if !result.IsError {
+		t.Error("expected error for empty fact content")
+	}
+}
+
+func TestToolBulkRemember_CompactionWorkflow(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	// Simulate a full compaction workflow:
+	// 1. Store some initial facts
+	server.toolRemember(map[string]interface{}{"fact": "old fact A"})
+	server.toolRemember(map[string]interface{}{"fact": "old fact B"})
+	server.toolRemember(map[string]interface{}{"fact": "old fact C"})
+
+	// 2. compact_context to see them all
+	compactResult := server.toolCompactContext(map[string]interface{}{})
+	if !strings.Contains(compactResult.Content[0].Text, "Found 3 facts") {
+		t.Fatalf("expected 3 facts in compact result")
+	}
+
+	// 3. Get IDs for bulk_forget
+	facts, _ := server.store.GetAllFactsByDir("/test/workdir")
+
+	// 4. bulk_forget the old facts
+	forgetResult := server.toolBulkForget(map[string]interface{}{
+		"ids": []interface{}{float64(facts[0].ID), float64(facts[1].ID), float64(facts[2].ID)},
+	})
+	if !strings.Contains(forgetResult.Content[0].Text, "Deleted 3 fact(s)") {
+		t.Fatalf("expected 3 deletions, got: %s", forgetResult.Content[0].Text)
+	}
+
+	// 5. bulk_remember the condensed facts
+	rememberResult := server.toolBulkRemember(map[string]interface{}{
+		"facts": []interface{}{
+			map[string]interface{}{"fact": "merged fact from A+B+C", "tags": []interface{}{"compacted"}},
+		},
+	})
+	if !strings.Contains(rememberResult.Content[0].Text, "Stored 1 fact(s)") {
+		t.Fatalf("expected 1 stored, got: %s", rememberResult.Content[0].Text)
+	}
+
+	// 6. Verify final state
+	remaining, _ := server.store.GetAllFactsByDir("/test/workdir")
+	if len(remaining) != 1 {
+		t.Errorf("expected 1 remaining fact, got %d", len(remaining))
+	}
+	if remaining[0].Content != "merged fact from A+B+C" {
+		t.Errorf("expected merged content, got '%s'", remaining[0].Content)
+	}
+}
+
 // Helper function tests
 
 func TestTruncate(t *testing.T) {

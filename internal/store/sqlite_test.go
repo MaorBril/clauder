@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -386,6 +387,247 @@ func TestMessage_MarkRead(t *testing.T) {
 }
 
 // Database tests
+
+func TestBulkAddFacts(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	facts := []BulkFact{
+		{Content: "fact one", Tags: []string{"tag1"}},
+		{Content: "fact two", Tags: nil},
+		{Content: "fact three", Tags: []string{"tag2", "tag3"}},
+	}
+
+	stored, err := store.BulkAddFacts(facts, "/project")
+	if err != nil {
+		t.Fatalf("BulkAddFacts failed: %v", err)
+	}
+	if len(stored) != 3 {
+		t.Fatalf("expected 3 stored facts, got %d", len(stored))
+	}
+
+	// Check IDs are unique and sequential
+	if stored[0].ID >= stored[1].ID || stored[1].ID >= stored[2].ID {
+		t.Error("expected sequential IDs")
+	}
+
+	// Check content preserved
+	if stored[0].Content != "fact one" {
+		t.Errorf("expected 'fact one', got '%s'", stored[0].Content)
+	}
+	if stored[1].Content != "fact two" {
+		t.Errorf("expected 'fact two', got '%s'", stored[1].Content)
+	}
+
+	// Check tags preserved
+	if len(stored[0].Tags) != 1 || stored[0].Tags[0] != "tag1" {
+		t.Errorf("unexpected tags for fact one: %v", stored[0].Tags)
+	}
+	// nil tags should become empty
+	if len(stored[1].Tags) != 0 {
+		t.Errorf("expected empty tags for fact two, got %v", stored[1].Tags)
+	}
+	if len(stored[2].Tags) != 2 {
+		t.Errorf("expected 2 tags for fact three, got %v", stored[2].Tags)
+	}
+
+	// Verify all stored in the right directory
+	if stored[0].SourceDir != "/project" {
+		t.Errorf("expected source_dir '/project', got '%s'", stored[0].SourceDir)
+	}
+
+	// Verify retrievable
+	all, _ := store.GetAllFactsByDir("/project")
+	if len(all) != 3 {
+		t.Errorf("expected 3 retrievable facts, got %d", len(all))
+	}
+}
+
+func TestBulkAddFacts_Empty(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	stored, err := store.BulkAddFacts([]BulkFact{}, "/project")
+	if err != nil {
+		t.Fatalf("BulkAddFacts failed: %v", err)
+	}
+	if len(stored) != 0 {
+		t.Errorf("expected 0 stored facts, got %d", len(stored))
+	}
+}
+
+func TestBulkAddFacts_Chunking(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// Create more facts than bulkInsertChunkSize (100) to exercise chunking
+	n := 250
+	facts := make([]BulkFact, n)
+	for i := range facts {
+		facts[i] = BulkFact{Content: fmt.Sprintf("fact %d", i)}
+	}
+
+	stored, err := store.BulkAddFacts(facts, "/project")
+	if err != nil {
+		t.Fatalf("BulkAddFacts failed: %v", err)
+	}
+	if len(stored) != n {
+		t.Fatalf("expected %d stored facts, got %d", n, len(stored))
+	}
+
+	// IDs should be sequential
+	for i := 1; i < len(stored); i++ {
+		if stored[i].ID != stored[i-1].ID+1 {
+			t.Errorf("expected sequential IDs, but fact[%d].ID=%d, fact[%d].ID=%d",
+				i-1, stored[i-1].ID, i, stored[i].ID)
+			break
+		}
+	}
+
+	// Content should match input order
+	if stored[0].Content != "fact 0" {
+		t.Errorf("expected 'fact 0', got '%s'", stored[0].Content)
+	}
+	if stored[n-1].Content != fmt.Sprintf("fact %d", n-1) {
+		t.Errorf("expected 'fact %d', got '%s'", n-1, stored[n-1].Content)
+	}
+
+	// Verify all retrievable
+	all, _ := store.GetAllFactsByDir("/project")
+	if len(all) != n {
+		t.Errorf("expected %d retrievable facts, got %d", n, len(all))
+	}
+}
+
+func TestGetAllFactsByDir(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	_, _ = store.AddFact("fact1 in project1", []string{"arch"}, "/project1")
+	_, _ = store.AddFact("fact2 in project1", nil, "/project1")
+	_, _ = store.AddFact("fact in project2", nil, "/project2")
+
+	facts, err := store.GetAllFactsByDir("/project1")
+	if err != nil {
+		t.Fatalf("GetAllFactsByDir failed: %v", err)
+	}
+	if len(facts) != 2 {
+		t.Errorf("expected 2 facts, got %d", len(facts))
+	}
+	// Should be ordered by created_at
+	if facts[0].Content != "fact1 in project1" {
+		t.Errorf("expected first fact to be 'fact1 in project1', got '%s'", facts[0].Content)
+	}
+}
+
+func TestGetAllFactsByDir_ExcludesDeleted(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	f1, _ := store.AddFact("active fact", nil, "/project")
+	f2, _ := store.AddFact("deleted fact", nil, "/project")
+	_ = store.SoftDeleteFact(f2.ID)
+
+	facts, err := store.GetAllFactsByDir("/project")
+	if err != nil {
+		t.Fatalf("GetAllFactsByDir failed: %v", err)
+	}
+	if len(facts) != 1 {
+		t.Errorf("expected 1 fact, got %d", len(facts))
+	}
+	if facts[0].ID != f1.ID {
+		t.Errorf("expected fact ID %d, got %d", f1.ID, facts[0].ID)
+	}
+}
+
+func TestGetAllFactsByDir_Empty(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	facts, err := store.GetAllFactsByDir("/nonexistent")
+	if err != nil {
+		t.Fatalf("GetAllFactsByDir failed: %v", err)
+	}
+	if len(facts) != 0 {
+		t.Errorf("expected 0 facts, got %d", len(facts))
+	}
+}
+
+func TestBulkSoftDeleteFacts(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	f1, _ := store.AddFact("fact 1", nil, "/project")
+	f2, _ := store.AddFact("fact 2", nil, "/project")
+	f3, _ := store.AddFact("fact 3", nil, "/project")
+
+	deleted, err := store.BulkSoftDeleteFacts([]int64{f1.ID, f3.ID})
+	if err != nil {
+		t.Fatalf("BulkSoftDeleteFacts failed: %v", err)
+	}
+	if deleted != 2 {
+		t.Errorf("expected 2 deleted, got %d", deleted)
+	}
+
+	// f2 should still be retrievable
+	found, _ := store.GetFactByID(f2.ID)
+	if found == nil {
+		t.Error("expected f2 to still exist")
+	}
+
+	// f1 and f3 should not be retrievable
+	gone1, _ := store.GetFactByID(f1.ID)
+	if gone1 != nil {
+		t.Error("expected f1 to be deleted")
+	}
+	gone3, _ := store.GetFactByID(f3.ID)
+	if gone3 != nil {
+		t.Error("expected f3 to be deleted")
+	}
+}
+
+func TestBulkSoftDeleteFacts_Empty(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	deleted, err := store.BulkSoftDeleteFacts([]int64{})
+	if err != nil {
+		t.Fatalf("BulkSoftDeleteFacts failed: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("expected 0 deleted, got %d", deleted)
+	}
+}
+
+func TestBulkSoftDeleteFacts_AlreadyDeleted(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	f1, _ := store.AddFact("fact 1", nil, "/project")
+	_ = store.SoftDeleteFact(f1.ID)
+
+	// Trying to bulk delete an already-deleted fact should affect 0 rows
+	deleted, err := store.BulkSoftDeleteFacts([]int64{f1.ID})
+	if err != nil {
+		t.Fatalf("BulkSoftDeleteFacts failed: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("expected 0 deleted (already soft-deleted), got %d", deleted)
+	}
+}
+
+func TestBulkSoftDeleteFacts_NonexistentIDs(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	deleted, err := store.BulkSoftDeleteFacts([]int64{99999, 88888})
+	if err != nil {
+		t.Fatalf("BulkSoftDeleteFacts failed: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("expected 0 deleted, got %d", deleted)
+	}
+}
 
 func TestNewSQLiteStore_CreatesDirectory(t *testing.T) {
 	tmpDir := filepath.Join(os.TempDir(), "clauder-test-nonexistent")

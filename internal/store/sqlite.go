@@ -372,6 +372,110 @@ func (s *SQLiteStore) AddFact(content string, tags []string, sourceDir string) (
 	}, nil
 }
 
+// bulkInsertChunkSize controls how many rows per multi-row INSERT.
+// Each fact uses 5 bind variables; SQLite's default SQLITE_MAX_VARIABLE_NUMBER is 999.
+// 100 * 5 = 500, well within the limit.
+const bulkInsertChunkSize = 100
+
+func (s *SQLiteStore) BulkAddFacts(facts []BulkFact, sourceDir string) ([]Fact, error) {
+	if len(facts) == 0 {
+		return []Fact{}, nil
+	}
+
+	now := time.Now()
+
+	// Pre-marshal all tags before starting the transaction
+	type preparedFact struct {
+		content  string
+		tags     []string
+		tagsJSON string
+	}
+	prepared := make([]preparedFact, len(facts))
+	for i, f := range facts {
+		tags := f.Tags
+		if tags == nil {
+			tags = []string{}
+		}
+		tagsJSON, err := json.Marshal(tags)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal tags for fact %d: %w", i, err)
+		}
+		prepared[i] = preparedFact{content: f.Content, tags: tags, tagsJSON: string(tagsJSON)}
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stored := make([]Fact, 0, len(facts))
+
+	for chunkStart := 0; chunkStart < len(prepared); chunkStart += bulkInsertChunkSize {
+		chunkEnd := chunkStart + bulkInsertChunkSize
+		if chunkEnd > len(prepared) {
+			chunkEnd = len(prepared)
+		}
+		chunk := prepared[chunkStart:chunkEnd]
+
+		// Build multi-row INSERT: INSERT INTO facts (...) VALUES (?,?,?,?,?),(?,?,?,?,?),...
+		var sb strings.Builder
+		sb.WriteString("INSERT INTO facts (content, tags, source_dir, created_at, updated_at) VALUES ")
+		args := make([]any, 0, len(chunk)*5)
+		for i, pf := range chunk {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteString("(?,?,?,?,?)")
+			args = append(args, pf.content, pf.tagsJSON, sourceDir, now, now)
+		}
+
+		result, err := tx.Exec(sb.String(), args...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to bulk insert facts: %w", err)
+		}
+
+		// LastInsertId returns the ID of the last row in the batch.
+		// For multi-row INSERT in SQLite, IDs are sequential, so
+		// first ID = lastID - (chunkLen - 1).
+		lastID, err := result.LastInsertId()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get last insert ID: %w", err)
+		}
+		firstID := lastID - int64(len(chunk)) + 1
+
+		for i, pf := range chunk {
+			stored = append(stored, Fact{
+				ID:        firstID + int64(i),
+				Content:   pf.content,
+				Tags:      pf.tags,
+				SourceDir: sourceDir,
+				CreatedAt: now,
+				UpdatedAt: now,
+			})
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Index in Bleve if available
+	if s.index != nil {
+		batch := s.index.NewBatch()
+		for _, f := range stored {
+			doc := FactDocument{
+				Content:   f.Content,
+				SourceDir: f.SourceDir,
+			}
+			_ = batch.Index(strconv.FormatInt(f.ID, 10), doc)
+		}
+		_ = s.index.Batch(batch)
+	}
+
+	return stored, nil
+}
+
 func (s *SQLiteStore) GetFacts(query string, tags []string, sourceDir string, limit int) ([]Fact, error) {
 	// Apply limit bounds
 	if limit <= 0 {
@@ -562,6 +666,32 @@ func (s *SQLiteStore) listFacts(tags []string, sourceDir string, limit int, sear
 	return facts, rows.Err()
 }
 
+func (s *SQLiteStore) GetAllFactsByDir(sourceDir string) ([]Fact, error) {
+	rows, err := s.db.Query(
+		"SELECT id, content, tags, source_dir, created_at, updated_at FROM facts WHERE source_dir = ? AND deleted_at IS NULL ORDER BY created_at",
+		sourceDir,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var facts []Fact
+	for rows.Next() {
+		var f Fact
+		var tagsJSON string
+		if err := rows.Scan(&f.ID, &f.Content, &tagsJSON, &f.SourceDir, &f.CreatedAt, &f.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(tagsJSON), &f.Tags); err != nil {
+			f.Tags = []string{}
+		}
+		facts = append(facts, f)
+	}
+
+	return facts, rows.Err()
+}
+
 func (s *SQLiteStore) GetFactByID(id int64) (*Fact, error) {
 	var f Fact
 	var tagsJSON string
@@ -599,6 +729,46 @@ func (s *SQLiteStore) SoftDeleteFact(id int64) error {
 	}
 
 	return nil
+}
+
+func (s *SQLiteStore) BulkSoftDeleteFacts(ids []int64) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, time.Now())
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+
+	query := fmt.Sprintf(
+		"UPDATE facts SET deleted_at = ? WHERE id IN (%s) AND deleted_at IS NULL",
+		strings.Join(placeholders, ","),
+	)
+
+	result, err := s.db.Exec(query, args...)
+	if err != nil {
+		return 0, err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	// Remove from Bleve index if available
+	if s.index != nil {
+		batch := s.index.NewBatch()
+		for _, id := range ids {
+			batch.Delete(strconv.FormatInt(id, 10))
+		}
+		_ = s.index.Batch(batch)
+	}
+
+	return int(affected), nil
 }
 
 // Instances

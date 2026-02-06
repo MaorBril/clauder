@@ -301,6 +301,44 @@ func (s *Server) handleToolsList(req *Request) {
 				},
 			},
 		},
+		{
+			Name:        "compact_context",
+			Description: "Get all stored facts for the current directory with full metadata, formatted for context compaction. Returns every fact with its ID, content, tags, and creation date so you can analyze which facts to keep, delete, or merge. Use this when asked to \"organize your sock drawer\", \"compact context\", or clean up stale memories.",
+			InputSchema: InputSchema{
+				Type:       "object",
+				Properties: map[string]Property{},
+			},
+		},
+		{
+			Name:        "bulk_forget",
+			Description: "Delete multiple facts at once by their IDs. Use this after analyzing facts from compact_context to efficiently remove stale or merged facts in a single operation.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"ids": {
+						Type:        "array",
+						Description: "Array of fact IDs to delete",
+						Items:       &Items{Type: "integer"},
+					},
+				},
+				Required: []string{"ids"},
+			},
+		},
+		{
+			Name:        "bulk_remember",
+			Description: "Store multiple facts at once in a single operation. Use this after compaction to efficiently store merged/condensed facts instead of calling remember in a loop.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"facts": {
+						Type:        "array",
+						Description: "Array of facts to store. Each entry is an object with 'fact' (string, required) and 'tags' (array of strings, optional).",
+						Items:       &Items{Type: "object"},
+					},
+				},
+				Required: []string{"facts"},
+			},
+		},
 	}
 
 	s.sendResult(req.ID, map[string]interface{}{"tools": tools})
@@ -332,6 +370,12 @@ func (s *Server) handleToolCall(req *Request) {
 	case "get_messages":
 		result = s.toolGetMessages(params.Arguments)
 		skipMessageNotification = true // Don't remind about messages when they're already reading them
+	case "compact_context":
+		result = s.toolCompactContext(params.Arguments)
+	case "bulk_forget":
+		result = s.toolBulkForget(params.Arguments)
+	case "bulk_remember":
+		result = s.toolBulkRemember(params.Arguments)
 	default:
 		result = ToolResult{
 			Content: []ContentBlock{{Type: "text", Text: "Unknown tool: " + params.Name}},

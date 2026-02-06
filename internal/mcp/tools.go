@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/maorbril/clauder/internal/store"
 	"github.com/maorbril/clauder/internal/telemetry"
 )
 
@@ -428,7 +429,141 @@ func (s *Server) toolGetMessages(args map[string]interface{}) ToolResult {
 	return textResult(sb.String())
 }
 
+func (s *Server) toolCompactContext(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("compact_context")
+
+	facts, err := s.store.GetAllFactsByDir(s.workDir)
+	if err != nil {
+		return errorResult(fmt.Sprintf("failed to get facts: %v", err))
+	}
+
+	if len(facts) == 0 {
+		return textResult("No facts found for this directory. Nothing to compact.")
+	}
+
+	// Calculate total size
+	totalSize := 0
+	for _, f := range facts {
+		totalSize += len(f.Content)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("# Context Compaction for %s\n\n", s.workDir))
+	sb.WriteString(fmt.Sprintf("Found %d facts (total ~%s).\n\n", len(facts), formatSize(totalSize)))
+	sb.WriteString("## Facts to Review\n\n")
+
+	for _, f := range facts {
+		tagStr := ""
+		if len(f.Tags) > 0 {
+			tagStr = fmt.Sprintf(" Tags: [%s]", strings.Join(f.Tags, ", "))
+		}
+		sb.WriteString(fmt.Sprintf("### #%d [%s]%s\n", f.ID, f.CreatedAt.Format("2006-01-02"), tagStr))
+		sb.WriteString(f.Content)
+		sb.WriteString("\n\n")
+	}
+
+	sb.WriteString("## Instructions\n")
+	sb.WriteString("Analyze each fact above. For each one, decide:\n")
+	sb.WriteString("- **KEEP**: Still relevant and useful for future sessions\n")
+	sb.WriteString("- **DELETE**: Stale, session-specific, or no longer relevant (old PRs, resolved bugs, superseded decisions)\n")
+	sb.WriteString("- **MERGE**: Can be combined with other facts into a more concise version\n\n")
+	sb.WriteString("Then:\n")
+	sb.WriteString("1. Call `bulk_forget` with the IDs of facts to DELETE and MERGE (the originals)\n")
+	sb.WriteString("2. Call `bulk_remember` with an array of newly merged/compacted facts\n")
+	sb.WriteString("3. Report a summary of what changed\n")
+
+	return textResult(sb.String())
+}
+
+func (s *Server) toolBulkForget(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("bulk_forget")
+
+	idsRaw, ok := args["ids"].([]interface{})
+	if !ok || len(idsRaw) == 0 {
+		return errorResult("'ids' is required and must be a non-empty array of fact IDs")
+	}
+
+	ids := make([]int64, 0, len(idsRaw))
+	for _, raw := range idsRaw {
+		idFloat, ok := raw.(float64)
+		if !ok {
+			return errorResult("each ID must be a number")
+		}
+		ids = append(ids, int64(idFloat))
+	}
+
+	deleted, err := s.store.BulkSoftDeleteFacts(ids)
+	if err != nil {
+		return errorResult(fmt.Sprintf("failed to bulk delete facts: %v", err))
+	}
+
+	return textResult(fmt.Sprintf("Deleted %d fact(s).", deleted))
+}
+
+func (s *Server) toolBulkRemember(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("bulk_remember")
+
+	factsRaw, ok := args["facts"].([]interface{})
+	if !ok || len(factsRaw) == 0 {
+		return errorResult("'facts' is required and must be a non-empty array")
+	}
+
+	bulkFacts := make([]store.BulkFact, 0, len(factsRaw))
+	for i, raw := range factsRaw {
+		obj, ok := raw.(map[string]interface{})
+		if !ok {
+			return errorResult(fmt.Sprintf("facts[%d]: each entry must be an object with 'fact' and optional 'tags'", i))
+		}
+
+		content, ok := obj["fact"].(string)
+		if !ok || content == "" {
+			return errorResult(fmt.Sprintf("facts[%d]: 'fact' is required and must be a non-empty string", i))
+		}
+
+		if len(content) > MaxFactSize {
+			return errorResult(fmt.Sprintf("facts[%d]: exceeds maximum size of %d bytes", i, MaxFactSize))
+		}
+
+		var tags []string
+		if tagsRaw, ok := obj["tags"].([]interface{}); ok {
+			if len(tagsRaw) > MaxTagCount {
+				return errorResult(fmt.Sprintf("facts[%d]: too many tags (max %d)", i, MaxTagCount))
+			}
+			for _, t := range tagsRaw {
+				if tag, ok := t.(string); ok {
+					if len(tag) > MaxTagLength {
+						return errorResult(fmt.Sprintf("facts[%d]: tag exceeds maximum length of %d", i, MaxTagLength))
+					}
+					tags = append(tags, tag)
+				}
+			}
+		}
+
+		bulkFacts = append(bulkFacts, store.BulkFact{Content: content, Tags: tags})
+	}
+
+	stored, err := s.store.BulkAddFacts(bulkFacts, s.workDir)
+	if err != nil {
+		return errorResult(fmt.Sprintf("failed to store facts: %v", err))
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Stored %d fact(s):\n", len(stored)))
+	for _, f := range stored {
+		sb.WriteString(fmt.Sprintf("- #%d: %s\n", f.ID, truncate(f.Content, 80)))
+	}
+
+	return textResult(sb.String())
+}
+
 // Helpers
+
+func formatSize(bytes int) string {
+	if bytes < 1024 {
+		return fmt.Sprintf("%dB", bytes)
+	}
+	return fmt.Sprintf("%.1fKB", float64(bytes)/1024)
+}
 
 func textResult(text string) ToolResult {
 	return ToolResult{

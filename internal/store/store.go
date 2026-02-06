@@ -14,6 +14,11 @@ type Fact struct {
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 }
 
+type BulkFact struct {
+	Content string   `json:"content"`
+	Tags    []string `json:"tags,omitempty"`
+}
+
 type Instance struct {
 	ID            string    `json:"id"`
 	DirectoryID   string    `json:"directory_id"`
@@ -39,10 +44,13 @@ type Message struct {
 type Store interface {
 	// Facts
 	AddFact(content string, tags []string, sourceDir string) (*Fact, error)
+	BulkAddFacts(facts []BulkFact, sourceDir string) ([]Fact, error)
 	GetFacts(query string, tags []string, sourceDir string, limit int) ([]Fact, error)
 	GetFactByID(id int64) (*Fact, error)
+	GetAllFactsByDir(sourceDir string) ([]Fact, error)
 	DeleteFact(id int64) error
 	SoftDeleteFact(id int64) error
+	BulkSoftDeleteFacts(ids []int64) (int, error)
 
 	// Instances
 	RegisterInstance(id, directoryID, name, directory, tty string, pid int) error
