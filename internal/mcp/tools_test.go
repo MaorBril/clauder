@@ -389,8 +389,8 @@ func TestToolGetContext_WithFacts(t *testing.T) {
 	if !strings.Contains(result.Content[0].Text, "local fact") {
 		t.Error("expected to find local fact")
 	}
-	if !strings.Contains(result.Content[0].Text, "global fact") {
-		t.Error("expected to find global fact")
+	if strings.Contains(result.Content[0].Text, "global fact") {
+		t.Error("should not contain facts from other directories")
 	}
 }
 

@@ -161,12 +161,6 @@ func (s *Server) toolGetContext(args map[string]interface{}) ToolResult {
 		return errorResult(fmt.Sprintf("failed to get local context: %v", err))
 	}
 
-	// Get recent global facts (from all directories)
-	globalFacts, err := s.store.GetFacts("", nil, "", 20)
-	if err != nil {
-		return errorResult(fmt.Sprintf("failed to get global context: %v", err))
-	}
-
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("# Context for %s\n\n", s.workDir))
 
@@ -192,38 +186,7 @@ func (s *Server) toolGetContext(args map[string]interface{}) ToolResult {
 		sb.WriteString("\n")
 	}
 
-	// Filter global facts to exclude local ones
-	var otherFacts []struct {
-		content string
-		dir     string
-		tags    []string
-	}
-	localIDs := make(map[int64]bool)
-	for _, f := range localFacts {
-		localIDs[f.ID] = true
-	}
-	for _, f := range globalFacts {
-		if !localIDs[f.ID] {
-			otherFacts = append(otherFacts, struct {
-				content string
-				dir     string
-				tags    []string
-			}{f.Content, f.SourceDir, f.Tags})
-		}
-	}
-
-	if len(otherFacts) > 0 {
-		sb.WriteString("## Recent Facts (other directories)\n\n")
-		for _, f := range otherFacts {
-			tagStr := ""
-			if len(f.tags) > 0 {
-				tagStr = fmt.Sprintf(" [%s]", strings.Join(f.tags, ", "))
-			}
-			sb.WriteString(fmt.Sprintf("- %s (%s)%s\n", f.content, f.dir, tagStr))
-		}
-	}
-
-	if len(localFacts) == 0 && len(otherFacts) == 0 {
+	if len(localFacts) == 0 {
 		sb.WriteString("No stored context yet. Use the `remember` tool to store facts and decisions.\n")
 	}
 

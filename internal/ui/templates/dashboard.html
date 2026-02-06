@@ -634,6 +634,36 @@
             color: var(--success);
         }
 
+        .fact-footer-right {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .delete-fact-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 0.875rem;
+            padding: 0.25rem;
+            border-radius: var(--radius-sm);
+            opacity: 0;
+            transition: opacity 0.15s, background 0.15s;
+            line-height: 1;
+        }
+
+        .delete-fact-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+        }
+
+        .fact-card:hover .delete-fact-btn {
+            opacity: 0.7;
+        }
+
+        .fact-card:hover .delete-fact-btn:hover {
+            opacity: 1;
+        }
+
         /* Map View */
         .map-layout {
             display: flex;
@@ -2002,6 +2032,22 @@
             renderFacts();
         }
 
+        function deleteFact(id, btn) {
+            const card = btn.closest('.fact-card');
+            card.style.opacity = '0.5';
+            card.style.pointerEvents = 'none';
+            fetch('/api/facts/delete?id=' + id, { method: 'POST' })
+                .then(res => {
+                    if (!res.ok) throw new Error('Delete failed');
+                    allData.facts = allData.facts.filter(f => f.id !== id);
+                    renderFacts();
+                })
+                .catch(() => {
+                    card.style.opacity = '';
+                    card.style.pointerEvents = '';
+                });
+        }
+
         function renderFacts() {
             const search = document.getElementById('facts-search').value.toLowerCase();
             const tagFilter = document.getElementById('facts-tag').value;
@@ -2036,9 +2082,12 @@
                         <div class="fact-tags">
                             ${fact.tags.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}
                         </div>
-                        <span class="fact-source ${fact.isLocal ? 'local' : ''}">
-                            ${fact.isLocal ? '&#10003; Local' : fact.shortDir}
-                        </span>
+                        <div class="fact-footer-right">
+                            <button class="delete-fact-btn" onclick="event.stopPropagation(); deleteFact(${fact.id}, this)" title="Delete fact">&#128465;</button>
+                            <span class="fact-source ${fact.isLocal ? 'local' : ''}">
+                                ${fact.isLocal ? '&#10003; Local' : fact.shortDir}
+                            </span>
+                        </div>
                     </div>
                 </div>
             `).join('');

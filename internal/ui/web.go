@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"sync"
 	"time"
 
@@ -121,6 +122,7 @@ func (ws *WebServer) Start(port int) error {
 	http.HandleFunc("/", ws.handleDashboard)
 	http.HandleFunc("/api/data", ws.handleAPIData)
 	http.HandleFunc("/api/launch", ws.handleLaunch)
+	http.HandleFunc("/api/facts/delete", ws.handleDeleteFact)
 	http.HandleFunc("/api/terminal", ws.handleTerminal)
 
 	addr := fmt.Sprintf(":%d", port)
@@ -223,6 +225,28 @@ func (ws *WebServer) handleLaunch(w http.ResponseWriter, r *http.Request) {
 		"status":    "launched",
 		"directory": dir,
 	})
+}
+
+func (ws *WebServer) handleDeleteFact(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	idStr := r.URL.Query().Get("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "Invalid fact ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := ws.store.SoftDeleteFact(id); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to delete fact: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 }
 
 func (ws *WebServer) handleTerminal(w http.ResponseWriter, r *http.Request) {
