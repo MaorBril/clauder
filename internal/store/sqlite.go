@@ -692,6 +692,31 @@ func (s *SQLiteStore) GetAllFactsByDir(sourceDir string) ([]Fact, error) {
 	return facts, rows.Err()
 }
 
+func (s *SQLiteStore) GetAllFacts() ([]Fact, error) {
+	rows, err := s.db.Query(
+		"SELECT id, content, tags, source_dir, created_at, updated_at FROM facts WHERE deleted_at IS NULL ORDER BY source_dir, created_at",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var facts []Fact
+	for rows.Next() {
+		var f Fact
+		var tagsJSON string
+		if err := rows.Scan(&f.ID, &f.Content, &tagsJSON, &f.SourceDir, &f.CreatedAt, &f.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(tagsJSON), &f.Tags); err != nil {
+			f.Tags = []string{}
+		}
+		facts = append(facts, f)
+	}
+
+	return facts, rows.Err()
+}
+
 func (s *SQLiteStore) GetFactByID(id int64) (*Fact, error) {
 	var f Fact
 	var tagsJSON string

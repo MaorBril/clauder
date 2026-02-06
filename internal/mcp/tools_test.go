@@ -713,6 +713,102 @@ func TestToolBulkRemember_CompactionWorkflow(t *testing.T) {
 	}
 }
 
+// GetGlobalContext tool tests
+
+func TestToolGetGlobalContext_Empty(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	result := server.toolGetGlobalContext(map[string]interface{}{})
+
+	if result.IsError {
+		t.Errorf("unexpected error: %s", result.Content[0].Text)
+	}
+	if !strings.Contains(result.Content[0].Text, "No stored facts across any directory") {
+		t.Errorf("unexpected result: %s", result.Content[0].Text)
+	}
+}
+
+func TestToolGetGlobalContext_MultipleDirs(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	// Add facts across multiple directories
+	server.toolRemember(map[string]interface{}{"fact": "local fact"})
+	_, _ = server.store.AddFact("other project fact", []string{"architecture"}, "/other/project")
+	_, _ = server.store.AddFact("third project fact", nil, "/third/project")
+
+	result := server.toolGetGlobalContext(map[string]interface{}{})
+
+	if result.IsError {
+		t.Errorf("unexpected error: %s", result.Content[0].Text)
+	}
+	text := result.Content[0].Text
+	if !strings.Contains(text, "Global Context (all directories)") {
+		t.Error("expected global context header")
+	}
+	if !strings.Contains(text, "local fact") {
+		t.Error("expected to find local fact")
+	}
+	if !strings.Contains(text, "other project fact") {
+		t.Error("expected to find other project fact")
+	}
+	if !strings.Contains(text, "third project fact") {
+		t.Error("expected to find third project fact")
+	}
+	if !strings.Contains(text, "/other/project") {
+		t.Error("expected to find /other/project directory header")
+	}
+	if !strings.Contains(text, "/third/project") {
+		t.Error("expected to find /third/project directory header")
+	}
+	if !strings.Contains(text, "architecture") {
+		t.Error("expected to find tag")
+	}
+	if !strings.Contains(text, "3 fact(s) across 3 directory(ies)") {
+		t.Errorf("expected summary line, got: %s", text)
+	}
+}
+
+func TestToolGetGlobalContext_ExcludesDeleted(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	server.toolRemember(map[string]interface{}{"fact": "active fact"})
+	deleted, _ := server.store.AddFact("deleted fact", nil, "/other/dir")
+	_ = server.store.SoftDeleteFact(deleted.ID)
+
+	result := server.toolGetGlobalContext(map[string]interface{}{})
+
+	text := result.Content[0].Text
+	if !strings.Contains(text, "active fact") {
+		t.Error("expected to find active fact")
+	}
+	if strings.Contains(text, "deleted fact") {
+		t.Error("should not contain deleted fact")
+	}
+}
+
+func TestToolGetGlobalContext_GroupsByDirectory(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	_, _ = server.store.AddFact("fact A in dir1", nil, "/dir1")
+	_, _ = server.store.AddFact("fact B in dir1", nil, "/dir1")
+	_, _ = server.store.AddFact("fact C in dir2", nil, "/dir2")
+
+	result := server.toolGetGlobalContext(map[string]interface{}{})
+
+	text := result.Content[0].Text
+	// Should show directory headers with counts
+	if !strings.Contains(text, "/dir1 (2 facts)") {
+		t.Errorf("expected '/dir1 (2 facts)' header, got: %s", text)
+	}
+	if !strings.Contains(text, "/dir2 (1 facts)") {
+		t.Errorf("expected '/dir2 (1 facts)' header, got: %s", text)
+	}
+}
+
 // Helper function tests
 
 func TestTruncate(t *testing.T) {

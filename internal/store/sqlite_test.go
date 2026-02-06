@@ -629,6 +629,67 @@ func TestBulkSoftDeleteFacts_NonexistentIDs(t *testing.T) {
 	}
 }
 
+func TestGetAllFacts(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	_, _ = store.AddFact("fact in project1", []string{"arch"}, "/project1")
+	_, _ = store.AddFact("fact in project2", nil, "/project2")
+	_, _ = store.AddFact("another fact in project1", nil, "/project1")
+
+	facts, err := store.GetAllFacts()
+	if err != nil {
+		t.Fatalf("GetAllFacts failed: %v", err)
+	}
+	if len(facts) != 3 {
+		t.Errorf("expected 3 facts, got %d", len(facts))
+	}
+
+	// Should be ordered by source_dir then created_at
+	if facts[0].SourceDir != "/project1" {
+		t.Errorf("expected first fact from /project1, got %s", facts[0].SourceDir)
+	}
+	if facts[1].SourceDir != "/project1" {
+		t.Errorf("expected second fact from /project1, got %s", facts[1].SourceDir)
+	}
+	if facts[2].SourceDir != "/project2" {
+		t.Errorf("expected third fact from /project2, got %s", facts[2].SourceDir)
+	}
+}
+
+func TestGetAllFacts_ExcludesDeleted(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	f1, _ := store.AddFact("active fact", nil, "/project1")
+	f2, _ := store.AddFact("deleted fact", nil, "/project2")
+	_ = store.SoftDeleteFact(f2.ID)
+
+	facts, err := store.GetAllFacts()
+	if err != nil {
+		t.Fatalf("GetAllFacts failed: %v", err)
+	}
+	if len(facts) != 1 {
+		t.Errorf("expected 1 fact, got %d", len(facts))
+	}
+	if facts[0].ID != f1.ID {
+		t.Errorf("expected fact ID %d, got %d", f1.ID, facts[0].ID)
+	}
+}
+
+func TestGetAllFacts_Empty(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	facts, err := store.GetAllFacts()
+	if err != nil {
+		t.Fatalf("GetAllFacts failed: %v", err)
+	}
+	if len(facts) != 0 {
+		t.Errorf("expected 0 facts, got %d", len(facts))
+	}
+}
+
 func TestNewSQLiteStore_CreatesDirectory(t *testing.T) {
 	tmpDir := filepath.Join(os.TempDir(), "clauder-test-nonexistent")
 	_ = os.RemoveAll(tmpDir) // Ensure it doesn't exist

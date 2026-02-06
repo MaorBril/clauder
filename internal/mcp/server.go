@@ -259,6 +259,14 @@ func (s *Server) handleToolsList(req *Request) {
 			},
 		},
 		{
+			Name:        "get_global_context",
+			Description: "Get all stored facts across ALL directories/repositories. Use this when you need context from other projects or want a complete view of everything stored in clauder, regardless of the current working directory.",
+			InputSchema: InputSchema{
+				Type:       "object",
+				Properties: map[string]Property{},
+			},
+		},
+		{
 			Name:        "list_instances",
 			Description: "List all running clauder instances across different directories. Use this to discover other Claude Code sessions you can communicate with.",
 			InputSchema: InputSchema{
@@ -363,6 +371,8 @@ func (s *Server) handleToolCall(req *Request) {
 		result = s.toolForget(params.Arguments)
 	case "get_context":
 		result = s.toolGetContext(params.Arguments)
+	case "get_global_context":
+		result = s.toolGetGlobalContext(params.Arguments)
 	case "list_instances":
 		result = s.toolListInstances(params.Arguments)
 	case "send_message":

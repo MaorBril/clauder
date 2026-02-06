@@ -48,6 +48,7 @@ type Store interface {
 	GetFacts(query string, tags []string, sourceDir string, limit int) ([]Fact, error)
 	GetFactByID(id int64) (*Fact, error)
 	GetAllFactsByDir(sourceDir string) ([]Fact, error)
+	GetAllFacts() ([]Fact, error)
 	DeleteFact(id int64) error
 	SoftDeleteFact(id int64) error
 	BulkSoftDeleteFacts(ids []int64) (int, error)

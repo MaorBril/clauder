@@ -214,6 +214,52 @@ func (s *Server) toolGetContext(args map[string]interface{}) ToolResult {
 	return textResult(sb.String())
 }
 
+func (s *Server) toolGetGlobalContext(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("get_global_context")
+
+	facts, err := s.store.GetAllFacts()
+	if err != nil {
+		return errorResult(fmt.Sprintf("failed to get global context: %v", err))
+	}
+
+	var sb strings.Builder
+	sb.WriteString("# Global Context (all directories)\n\n")
+
+	if len(facts) == 0 {
+		sb.WriteString("No stored facts across any directory.\n")
+		return textResult(sb.String())
+	}
+
+	// Group facts by directory
+	byDir := make(map[string][]store.Fact)
+	var dirOrder []string
+	for _, f := range facts {
+		if _, exists := byDir[f.SourceDir]; !exists {
+			dirOrder = append(dirOrder, f.SourceDir)
+		}
+		byDir[f.SourceDir] = append(byDir[f.SourceDir], f)
+	}
+
+	totalFacts := 0
+	for _, dir := range dirOrder {
+		dirFacts := byDir[dir]
+		totalFacts += len(dirFacts)
+		sb.WriteString(fmt.Sprintf("## %s (%d facts)\n\n", dir, len(dirFacts)))
+		for _, f := range dirFacts {
+			tagStr := ""
+			if len(f.Tags) > 0 {
+				tagStr = fmt.Sprintf(" [%s]", strings.Join(f.Tags, ", "))
+			}
+			sb.WriteString(fmt.Sprintf("- **#%d** %s%s\n", f.ID, f.Content, tagStr))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(fmt.Sprintf("---\nTotal: %d fact(s) across %d directory(ies)\n", totalFacts, len(dirOrder)))
+
+	return textResult(sb.String())
+}
+
 func (s *Server) toolListInstances(args map[string]interface{}) ToolResult {
 	telemetry.TrackMCPTool("list_instances")
 	// Cleanup stale instances first

@@ -18,6 +18,7 @@ This context may or may not be relevant to your tasks. You should not respond to
 - **mcp__clauder__recall**: Search and retrieve stored facts
 - **mcp__clauder__forget**: Delete a stored fact by ID (requires confirmation)
 - **mcp__clauder__get_context**: Load all relevant context for this directory (also shows sibling instances)
+- **mcp__clauder__get_global_context**: Load ALL facts across every directory/repository (use when you need context from other projects)
 - **mcp__clauder__list_instances**: List other running Claude Code sessions (grouped by directory)
 - **mcp__clauder__send_message**: Send messages to other instances (supports broadcast to directory)
 - **mcp__clauder__get_messages**: Check for incoming messages
