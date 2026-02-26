@@ -796,6 +796,249 @@ func (s *SQLiteStore) BulkSoftDeleteFacts(ids []int64) (int, error) {
 	return int(affected), nil
 }
 
+// UpdateFact updates the content and/or tags of an existing fact
+func (s *SQLiteStore) UpdateFact(id int64, content string, tags []string) (*Fact, error) {
+	if tags == nil {
+		tags = []string{}
+	}
+	tagsJSON, err := json.Marshal(tags)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	result, err := s.db.Exec(
+		"UPDATE facts SET content = ?, tags = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+		content, string(tagsJSON), now, id,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if affected == 0 {
+		return nil, nil // fact not found or already deleted
+	}
+
+	// Update Bleve index if available
+	if s.index != nil {
+		fact, err := s.GetFactByID(id)
+		if err == nil && fact != nil {
+			doc := FactDocument{
+				Content:   fact.Content,
+				SourceDir: fact.SourceDir,
+			}
+			_ = s.index.Index(strconv.FormatInt(id, 10), doc)
+		}
+	}
+
+	return s.GetFactByID(id)
+}
+
+// CompressFacts atomically deletes old facts and adds new consolidated ones in a single transaction
+func (s *SQLiteStore) CompressFacts(deleteIDs []int64, newFacts []BulkFact, sourceDir string) (int, []Fact, error) {
+	if len(deleteIDs) == 0 && len(newFacts) == 0 {
+		return 0, []Fact{}, nil
+	}
+
+	now := time.Now()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Soft-delete old facts
+	deleted := 0
+	if len(deleteIDs) > 0 {
+		placeholders := make([]string, len(deleteIDs))
+		args := make([]any, 0, len(deleteIDs)+1)
+		args = append(args, now)
+		for i, id := range deleteIDs {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+
+		query := fmt.Sprintf(
+			"UPDATE facts SET deleted_at = ? WHERE id IN (%s) AND deleted_at IS NULL",
+			strings.Join(placeholders, ","),
+		)
+
+		result, err := tx.Exec(query, args...)
+		if err != nil {
+			return 0, nil, fmt.Errorf("failed to delete facts: %w", err)
+		}
+
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return 0, nil, err
+		}
+		deleted = int(affected)
+	}
+
+	// Add new consolidated facts
+	stored := make([]Fact, 0, len(newFacts))
+	if len(newFacts) > 0 {
+		// Pre-marshal tags
+		type preparedFact struct {
+			content  string
+			tags     []string
+			tagsJSON string
+		}
+		prepared := make([]preparedFact, len(newFacts))
+		for i, f := range newFacts {
+			tags := f.Tags
+			if tags == nil {
+				tags = []string{}
+			}
+			tagsJSON, err := json.Marshal(tags)
+			if err != nil {
+				return 0, nil, fmt.Errorf("failed to marshal tags for fact %d: %w", i, err)
+			}
+			prepared[i] = preparedFact{content: f.Content, tags: tags, tagsJSON: string(tagsJSON)}
+		}
+
+		for chunkStart := 0; chunkStart < len(prepared); chunkStart += bulkInsertChunkSize {
+			chunkEnd := chunkStart + bulkInsertChunkSize
+			if chunkEnd > len(prepared) {
+				chunkEnd = len(prepared)
+			}
+			chunk := prepared[chunkStart:chunkEnd]
+
+			var sb strings.Builder
+			sb.WriteString("INSERT INTO facts (content, tags, source_dir, created_at, updated_at) VALUES ")
+			args := make([]any, 0, len(chunk)*5)
+			for i, pf := range chunk {
+				if i > 0 {
+					sb.WriteByte(',')
+				}
+				sb.WriteString("(?,?,?,?,?)")
+				args = append(args, pf.content, pf.tagsJSON, sourceDir, now, now)
+			}
+
+			result, err := tx.Exec(sb.String(), args...)
+			if err != nil {
+				return 0, nil, fmt.Errorf("failed to insert facts: %w", err)
+			}
+
+			lastID, err := result.LastInsertId()
+			if err != nil {
+				return 0, nil, fmt.Errorf("failed to get last insert ID: %w", err)
+			}
+			firstID := lastID - int64(len(chunk)) + 1
+
+			for i, pf := range chunk {
+				stored = append(stored, Fact{
+					ID:        firstID + int64(i),
+					Content:   pf.content,
+					Tags:      pf.tags,
+					SourceDir: sourceDir,
+					CreatedAt: now,
+					UpdatedAt: now,
+				})
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Update Bleve index
+	if s.index != nil {
+		batch := s.index.NewBatch()
+		for _, id := range deleteIDs {
+			batch.Delete(strconv.FormatInt(id, 10))
+		}
+		for _, f := range stored {
+			doc := FactDocument{
+				Content:   f.Content,
+				SourceDir: f.SourceDir,
+			}
+			_ = batch.Index(strconv.FormatInt(f.ID, 10), doc)
+		}
+		_ = s.index.Batch(batch)
+	}
+
+	return deleted, stored, nil
+}
+
+// PurgeDeletedFacts permanently removes all soft-deleted facts from the database
+func (s *SQLiteStore) PurgeDeletedFacts() (int, error) {
+	result, err := s.db.Exec("DELETE FROM facts WHERE deleted_at IS NOT NULL")
+	if err != nil {
+		return 0, err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	return int(affected), nil
+}
+
+// GetFactStats returns statistics about all stored facts
+func (s *SQLiteStore) GetFactStats() (*FactStats, error) {
+	stats := &FactStats{
+		ByDirectory: make(map[string]DirStats),
+	}
+
+	// Active facts by directory
+	rows, err := s.db.Query(`
+		SELECT source_dir, COUNT(*), SUM(LENGTH(content)), MIN(created_at), MAX(created_at)
+		FROM facts WHERE deleted_at IS NULL
+		GROUP BY source_dir
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var dir string
+		var count, size int
+		var oldestStr, newestStr string
+		if err := rows.Scan(&dir, &count, &size, &oldestStr, &newestStr); err != nil {
+			return nil, err
+		}
+		oldest, _ := time.Parse("2006-01-02 15:04:05-07:00", oldestStr)
+		if oldest.IsZero() {
+			oldest, _ = time.Parse("2006-01-02T15:04:05Z", oldestStr)
+		}
+		newest, _ := time.Parse("2006-01-02 15:04:05-07:00", newestStr)
+		if newest.IsZero() {
+			newest, _ = time.Parse("2006-01-02T15:04:05Z", newestStr)
+		}
+		stats.TotalFacts += count
+		stats.TotalSize += size
+		stats.ByDirectory[dir] = DirStats{
+			Count:  count,
+			Size:   size,
+			Oldest: oldest,
+			Newest: newest,
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Deleted facts stats
+	err = s.db.QueryRow(`
+		SELECT COALESCE(COUNT(*), 0), COALESCE(SUM(LENGTH(content)), 0)
+		FROM facts WHERE deleted_at IS NOT NULL
+	`).Scan(&stats.DeletedFacts, &stats.DeletedSize)
+	if err != nil {
+		return nil, err
+	}
+
+	return stats, nil
+}
+
 // Instances
 
 func (s *SQLiteStore) RegisterInstance(id, directoryID, name, directory, tty string, pid int) error {

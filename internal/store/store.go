@@ -19,6 +19,21 @@ type BulkFact struct {
 	Tags    []string `json:"tags,omitempty"`
 }
 
+type DirStats struct {
+	Count  int       `json:"count"`
+	Size   int       `json:"size"`
+	Oldest time.Time `json:"oldest"`
+	Newest time.Time `json:"newest"`
+}
+
+type FactStats struct {
+	TotalFacts   int                `json:"total_facts"`
+	TotalSize    int                `json:"total_size"`
+	DeletedFacts int                `json:"deleted_facts"`
+	DeletedSize  int                `json:"deleted_size"`
+	ByDirectory  map[string]DirStats `json:"by_directory"`
+}
+
 type Instance struct {
 	ID            string    `json:"id"`
 	DirectoryID   string    `json:"directory_id"`
@@ -52,6 +67,10 @@ type Store interface {
 	DeleteFact(id int64) error
 	SoftDeleteFact(id int64) error
 	BulkSoftDeleteFacts(ids []int64) (int, error)
+	UpdateFact(id int64, content string, tags []string) (*Fact, error)
+	CompressFacts(deleteIDs []int64, newFacts []BulkFact, sourceDir string) (int, []Fact, error)
+	PurgeDeletedFacts() (int, error)
+	GetFactStats() (*FactStats, error)
 
 	// Instances
 	RegisterInstance(id, directoryID, name, directory, tty string, pid int) error

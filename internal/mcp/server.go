@@ -311,10 +311,15 @@ func (s *Server) handleToolsList(req *Request) {
 		},
 		{
 			Name:        "compact_context",
-			Description: "Get all stored facts for the current directory with full metadata, formatted for context compaction. Returns every fact with its ID, content, tags, and creation date so you can analyze which facts to keep, delete, or merge. Use this when asked to \"organize your sock drawer\", \"compact context\", or clean up stale memories.",
+			Description: "Get all stored facts with full metadata, formatted for context compaction. Returns every fact with its ID, content, tags, age, and size so you can analyze which facts to keep, delete, or merge. Use this when asked to \"organize your sock drawer\", \"compact context\", or clean up stale memories. Set global=true to review facts across ALL directories.",
 			InputSchema: InputSchema{
-				Type:       "object",
-				Properties: map[string]Property{},
+				Type: "object",
+				Properties: map[string]Property{
+					"global": {
+						Type:        "boolean",
+						Description: "If true, review facts across all directories (default: current directory only)",
+					},
+				},
 			},
 		},
 		{
@@ -345,6 +350,69 @@ func (s *Server) handleToolsList(req *Request) {
 					},
 				},
 				Required: []string{"facts"},
+			},
+		},
+		{
+			Name:        "compress_facts",
+			Description: "Atomically replace multiple facts with consolidated versions. Deletes the specified old facts and adds new ones in a single transaction - no partial state if something fails. Use this after compact_context to merge related facts, remove duplicates, and condense verbose facts.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"delete_ids": {
+						Type:        "array",
+						Description: "IDs of facts to delete (the originals being replaced/removed)",
+						Items:       &Items{Type: "integer"},
+					},
+					"new_facts": {
+						Type:        "array",
+						Description: "New consolidated facts to add. Each entry is an object with 'fact' (string, required) and 'tags' (array of strings, optional).",
+						Items:       &Items{Type: "object"},
+					},
+				},
+			},
+		},
+		{
+			Name:        "update_fact",
+			Description: "Update an existing fact's content and/or tags in place without deleting and re-creating it. Preserves the fact ID and creation date.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"id": {
+						Type:        "integer",
+						Description: "The ID of the fact to update",
+					},
+					"content": {
+						Type:        "string",
+						Description: "New content for the fact",
+					},
+					"tags": {
+						Type:        "array",
+						Description: "New tags (replaces existing tags). If omitted, existing tags are preserved.",
+						Items:       &Items{Type: "string"},
+					},
+				},
+				Required: []string{"id", "content"},
+			},
+		},
+		{
+			Name:        "fact_stats",
+			Description: "Get statistics about stored facts: counts, sizes, age distribution, and per-directory breakdown. Use this to understand the state of memory before deciding whether to compact.",
+			InputSchema: InputSchema{
+				Type:       "object",
+				Properties: map[string]Property{},
+			},
+		},
+		{
+			Name:        "purge_deleted",
+			Description: "Permanently remove all soft-deleted facts from the database to reclaim space. Requires confirmation. Soft-deleted facts are normally hidden but still stored; this removes them forever.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"confirm": {
+						Type:        "boolean",
+						Description: "Set to true to confirm permanent deletion. If false/omitted, shows what would be purged.",
+					},
+				},
 			},
 		},
 	}
@@ -386,6 +454,14 @@ func (s *Server) handleToolCall(req *Request) {
 		result = s.toolBulkForget(params.Arguments)
 	case "bulk_remember":
 		result = s.toolBulkRemember(params.Arguments)
+	case "compress_facts":
+		result = s.toolCompressFacts(params.Arguments)
+	case "update_fact":
+		result = s.toolUpdateFact(params.Arguments)
+	case "fact_stats":
+		result = s.toolFactStats(params.Arguments)
+	case "purge_deleted":
+		result = s.toolPurgeDeleted(params.Arguments)
 	default:
 		result = ToolResult{
 			Content: []ContentBlock{{Type: "text", Text: "Unknown tool: " + params.Name}},

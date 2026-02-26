@@ -478,47 +478,272 @@ func (s *Server) toolGetMessages(args map[string]interface{}) ToolResult {
 func (s *Server) toolCompactContext(args map[string]interface{}) ToolResult {
 	telemetry.TrackMCPTool("compact_context")
 
-	facts, err := s.store.GetAllFactsByDir(s.workDir)
+	global, _ := args["global"].(bool)
+
+	var facts []store.Fact
+	var err error
+	var scope string
+
+	if global {
+		facts, err = s.store.GetAllFacts()
+		scope = "all directories"
+	} else {
+		facts, err = s.store.GetAllFactsByDir(s.workDir)
+		scope = s.workDir
+	}
 	if err != nil {
 		return errorResult(fmt.Sprintf("failed to get facts: %v", err))
 	}
 
 	if len(facts) == 0 {
-		return textResult("No facts found for this directory. Nothing to compact.")
+		return textResult("No facts found. Nothing to compact.")
 	}
 
-	// Calculate total size
+	// Calculate stats
 	totalSize := 0
+	now := time.Now()
 	for _, f := range facts {
 		totalSize += len(f.Content)
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("# Context Compaction for %s\n\n", s.workDir))
-	sb.WriteString(fmt.Sprintf("Found %d facts (total ~%s).\n\n", len(facts), formatSize(totalSize)))
-	sb.WriteString("## Facts to Review\n\n")
+	sb.WriteString(fmt.Sprintf("# Context Compaction for %s\n\n", scope))
+	sb.WriteString(fmt.Sprintf("**%d facts** | **%s total** | oldest: %s\n\n",
+		len(facts), formatSize(totalSize), facts[0].CreatedAt.Format("2006-01-02")))
 
-	for _, f := range facts {
-		tagStr := ""
-		if len(f.Tags) > 0 {
-			tagStr = fmt.Sprintf(" Tags: [%s]", strings.Join(f.Tags, ", "))
+	// Group by directory if global
+	if global {
+		byDir := make(map[string][]store.Fact)
+		var dirOrder []string
+		for _, f := range facts {
+			if _, exists := byDir[f.SourceDir]; !exists {
+				dirOrder = append(dirOrder, f.SourceDir)
+			}
+			byDir[f.SourceDir] = append(byDir[f.SourceDir], f)
 		}
-		sb.WriteString(fmt.Sprintf("### #%d [%s]%s\n", f.ID, f.CreatedAt.Format("2006-01-02"), tagStr))
-		sb.WriteString(f.Content)
-		sb.WriteString("\n\n")
+
+		for _, dir := range dirOrder {
+			dirFacts := byDir[dir]
+			dirSize := 0
+			for _, f := range dirFacts {
+				dirSize += len(f.Content)
+			}
+			sb.WriteString(fmt.Sprintf("## %s (%d facts, %s)\n\n", dir, len(dirFacts), formatSize(dirSize)))
+			for _, f := range dirFacts {
+				s.writeFactForReview(&sb, f, now)
+			}
+		}
+	} else {
+		sb.WriteString("## Facts to Review\n\n")
+		for _, f := range facts {
+			s.writeFactForReview(&sb, f, now)
+		}
 	}
 
-	sb.WriteString("## Instructions\n")
+	sb.WriteString("## Instructions\n\n")
 	sb.WriteString("Analyze each fact above. For each one, decide:\n")
-	sb.WriteString("- **KEEP**: Still relevant and useful for future sessions\n")
-	sb.WriteString("- **DELETE**: Stale, session-specific, or no longer relevant (old PRs, resolved bugs, superseded decisions)\n")
-	sb.WriteString("- **MERGE**: Can be combined with other facts into a more concise version\n\n")
-	sb.WriteString("Then:\n")
-	sb.WriteString("1. Call `bulk_forget` with the IDs of facts to DELETE and MERGE (the originals)\n")
-	sb.WriteString("2. Call `bulk_remember` with an array of newly merged/compacted facts\n")
-	sb.WriteString("3. Report a summary of what changed\n")
+	sb.WriteString("- **KEEP**: Still relevant and useful\n")
+	sb.WriteString("- **DELETE**: Stale, session-specific, or superseded\n")
+	sb.WriteString("- **MERGE**: Can be combined with related facts into a more concise version\n\n")
+	sb.WriteString("Then call `compress_facts` with:\n")
+	sb.WriteString("- `delete_ids`: IDs of facts to DELETE or MERGE (the originals)\n")
+	sb.WriteString("- `new_facts`: Array of newly merged/compacted facts\n\n")
+	sb.WriteString("This atomically replaces old facts with new consolidated ones.\n")
 
 	return textResult(sb.String())
+}
+
+func (s *Server) writeFactForReview(sb *strings.Builder, f store.Fact, now time.Time) {
+	age := now.Sub(f.CreatedAt)
+	ageStr := formatAge(age)
+	sizeStr := formatSize(len(f.Content))
+
+	tagStr := ""
+	if len(f.Tags) > 0 {
+		tagStr = fmt.Sprintf(" | tags: %s", strings.Join(f.Tags, ", "))
+	}
+	sb.WriteString(fmt.Sprintf("### #%d (%s old, %s%s)\n", f.ID, ageStr, sizeStr, tagStr))
+	sb.WriteString(f.Content)
+	sb.WriteString("\n\n")
+}
+
+func (s *Server) toolCompressFacts(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("compress_facts")
+
+	// Parse delete IDs
+	var deleteIDs []int64
+	if idsRaw, ok := args["delete_ids"].([]interface{}); ok {
+		for _, raw := range idsRaw {
+			if idFloat, ok := raw.(float64); ok {
+				deleteIDs = append(deleteIDs, int64(idFloat))
+			}
+		}
+	}
+
+	// Parse new facts
+	var newFacts []store.BulkFact
+	if factsRaw, ok := args["new_facts"].([]interface{}); ok {
+		for i, raw := range factsRaw {
+			obj, ok := raw.(map[string]interface{})
+			if !ok {
+				return errorResult(fmt.Sprintf("new_facts[%d]: must be an object with 'fact' and optional 'tags'", i))
+			}
+
+			content, ok := obj["fact"].(string)
+			if !ok || content == "" {
+				return errorResult(fmt.Sprintf("new_facts[%d]: 'fact' is required", i))
+			}
+
+			if len(content) > MaxFactSize {
+				return errorResult(fmt.Sprintf("new_facts[%d]: exceeds maximum size", i))
+			}
+
+			var tags []string
+			if tagsRaw, ok := obj["tags"].([]interface{}); ok {
+				for _, t := range tagsRaw {
+					if tag, ok := t.(string); ok {
+						tags = append(tags, tag)
+					}
+				}
+			}
+
+			newFacts = append(newFacts, store.BulkFact{Content: content, Tags: tags})
+		}
+	}
+
+	if len(deleteIDs) == 0 && len(newFacts) == 0 {
+		return errorResult("provide at least 'delete_ids' or 'new_facts'")
+	}
+
+	deleted, added, err := s.store.CompressFacts(deleteIDs, newFacts, s.workDir)
+	if err != nil {
+		return errorResult(fmt.Sprintf("compression failed: %v", err))
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Compression complete: deleted %d fact(s), added %d new fact(s).\n", deleted, len(added)))
+	if len(added) > 0 {
+		sb.WriteString("\nNew facts:\n")
+		for _, f := range added {
+			sb.WriteString(fmt.Sprintf("- #%d: %s\n", f.ID, truncate(f.Content, 80)))
+		}
+	}
+
+	return textResult(sb.String())
+}
+
+func (s *Server) toolUpdateFact(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("update_fact")
+
+	idFloat, ok := args["id"].(float64)
+	if !ok {
+		return errorResult("'id' is required and must be a number")
+	}
+	id := int64(idFloat)
+
+	content, _ := args["content"].(string)
+	if content == "" {
+		return errorResult("'content' is required")
+	}
+
+	if len(content) > MaxFactSize {
+		return errorResult(fmt.Sprintf("content exceeds maximum size of %d bytes", MaxFactSize))
+	}
+
+	var tags []string
+	if tagsRaw, ok := args["tags"].([]interface{}); ok {
+		for _, t := range tagsRaw {
+			if tag, ok := t.(string); ok {
+				tags = append(tags, tag)
+			}
+		}
+	} else {
+		// Preserve existing tags if not provided
+		existing, err := s.store.GetFactByID(id)
+		if err != nil {
+			return errorResult(fmt.Sprintf("failed to get fact: %v", err))
+		}
+		if existing == nil {
+			return errorResult(fmt.Sprintf("fact #%d not found", id))
+		}
+		tags = existing.Tags
+	}
+
+	updated, err := s.store.UpdateFact(id, content, tags)
+	if err != nil {
+		return errorResult(fmt.Sprintf("failed to update fact: %v", err))
+	}
+	if updated == nil {
+		return errorResult(fmt.Sprintf("fact #%d not found or already deleted", id))
+	}
+
+	return textResult(fmt.Sprintf("Updated fact #%d: %s", updated.ID, truncate(updated.Content, 100)))
+}
+
+func (s *Server) toolFactStats(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("fact_stats")
+
+	stats, err := s.store.GetFactStats()
+	if err != nil {
+		return errorResult(fmt.Sprintf("failed to get stats: %v", err))
+	}
+
+	now := time.Now()
+	var sb strings.Builder
+	sb.WriteString("# Fact Statistics\n\n")
+	sb.WriteString(fmt.Sprintf("**Active facts:** %d (%s)\n", stats.TotalFacts, formatSize(stats.TotalSize)))
+	sb.WriteString(fmt.Sprintf("**Soft-deleted:** %d (%s)\n", stats.DeletedFacts, formatSize(stats.DeletedSize)))
+	sb.WriteString(fmt.Sprintf("**Directories:** %d\n\n", len(stats.ByDirectory)))
+
+	if len(stats.ByDirectory) > 0 {
+		sb.WriteString("## By Directory\n\n")
+		sb.WriteString("| Directory | Facts | Size | Oldest | Newest |\n")
+		sb.WriteString("|-----------|-------|------|--------|--------|\n")
+		for dir, ds := range stats.ByDirectory {
+			sb.WriteString(fmt.Sprintf("| %s | %d | %s | %s (%s ago) | %s (%s ago) |\n",
+				dir, ds.Count, formatSize(ds.Size),
+				ds.Oldest.Format("2006-01-02"), formatAge(now.Sub(ds.Oldest)),
+				ds.Newest.Format("2006-01-02"), formatAge(now.Sub(ds.Newest)),
+			))
+		}
+		sb.WriteString("\n")
+	}
+
+	if stats.DeletedFacts > 0 {
+		sb.WriteString(fmt.Sprintf("Use `purge_deleted` to permanently remove %d soft-deleted fact(s) and reclaim %s.\n",
+			stats.DeletedFacts, formatSize(stats.DeletedSize)))
+	}
+
+	return textResult(sb.String())
+}
+
+func (s *Server) toolPurgeDeleted(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("purge_deleted")
+
+	confirm, _ := args["confirm"].(bool)
+	if !confirm {
+		// Show what would be purged
+		stats, err := s.store.GetFactStats()
+		if err != nil {
+			return errorResult(fmt.Sprintf("failed to get stats: %v", err))
+		}
+
+		if stats.DeletedFacts == 0 {
+			return textResult("No soft-deleted facts to purge.")
+		}
+
+		return textResult(fmt.Sprintf(
+			"**%d soft-deleted fact(s)** (%s) will be permanently removed.\n\nCall again with `confirm: true` to proceed. This cannot be undone.",
+			stats.DeletedFacts, formatSize(stats.DeletedSize),
+		))
+	}
+
+	purged, err := s.store.PurgeDeletedFacts()
+	if err != nil {
+		return errorResult(fmt.Sprintf("failed to purge: %v", err))
+	}
+
+	return textResult(fmt.Sprintf("Permanently removed %d deleted fact(s).", purged))
 }
 
 func (s *Server) toolBulkForget(args map[string]interface{}) ToolResult {
@@ -608,7 +833,29 @@ func formatSize(bytes int) string {
 	if bytes < 1024 {
 		return fmt.Sprintf("%dB", bytes)
 	}
-	return fmt.Sprintf("%.1fKB", float64(bytes)/1024)
+	if bytes < 1024*1024 {
+		return fmt.Sprintf("%.1fKB", float64(bytes)/1024)
+	}
+	return fmt.Sprintf("%.1fMB", float64(bytes)/(1024*1024))
+}
+
+func formatAge(d time.Duration) string {
+	days := int(d.Hours() / 24)
+	if days == 0 {
+		hours := int(d.Hours())
+		if hours == 0 {
+			return fmt.Sprintf("%dm", int(d.Minutes()))
+		}
+		return fmt.Sprintf("%dh", hours)
+	}
+	if days < 30 {
+		return fmt.Sprintf("%dd", days)
+	}
+	months := days / 30
+	if months < 12 {
+		return fmt.Sprintf("%dmo", months)
+	}
+	return fmt.Sprintf("%dy%dmo", months/12, months%12)
 }
 
 func textResult(text string) ToolResult {
