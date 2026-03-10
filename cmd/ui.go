@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/maorbril/clauder/internal/store"
-	"github.com/maorbril/clauder/internal/ui"
+	"github.com/orsi-bit/openclawder/internal/store"
+	"github.com/orsi-bit/openclawder/internal/ui"
 	"github.com/spf13/cobra"
 )
 

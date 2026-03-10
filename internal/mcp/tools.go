@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/maorbril/clauder/internal/store"
-	"github.com/maorbril/clauder/internal/telemetry"
+	"github.com/orsi-bit/openclawder/internal/store"
+	"github.com/orsi-bit/openclawder/internal/telemetry"
 )
 
 // Size limits for DoS prevention

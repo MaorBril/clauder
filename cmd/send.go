@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/maorbril/clauder/internal/store"
+	"github.com/orsi-bit/openclawder/internal/store"
 	"github.com/spf13/cobra"
 )
 
 var sendCmd = &cobra.Command{
 	Use:   "send <instance-id> <message>",
 	Short: "Send a message to another instance",
-	Long:  `Send a message to another running clauder instance.`,
+	Long:  `Send a message to another running openclawder instance.`,
 	Args:  cobra.MinimumNArgs(2),
 	RunE:  runSend,
 }

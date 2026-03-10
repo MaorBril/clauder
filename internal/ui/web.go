@@ -17,7 +17,7 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
-	"github.com/maorbril/clauder/internal/store"
+	"github.com/orsi-bit/openclawder/internal/store"
 )
 
 var upgrader = websocket.Upgrader{

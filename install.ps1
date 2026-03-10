@@ -1,10 +1,10 @@
-# Clauder installer script for Windows
-# Usage: irm https://raw.githubusercontent.com/MaorBril/clauder/main/install.ps1 | iex
+# openclawder installer script for Windows
+# Usage: irm https://raw.githubusercontent.com/orsi-bit/openclawder/main/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 
-$Repo = "MaorBril/clauder"
-$InstallDir = if ($env:CLAUDER_INSTALL_DIR) { $env:CLAUDER_INSTALL_DIR } else { "$env:LOCALAPPDATA\clauder" }
+$Repo = "orsi-bit/openclawder"
+$InstallDir = if ($env:OPENCLAWDER_INSTALL_DIR) { $env:OPENCLAWDER_INSTALL_DIR } else { "$env:LOCALAPPDATA\openclawder" }
 
 function Get-Architecture {
     switch ($env:PROCESSOR_ARCHITECTURE) {
@@ -19,8 +19,8 @@ function Get-LatestVersion {
     return $response.tag_name
 }
 
-function Install-Clauder {
-    Write-Host "Installing clauder..." -ForegroundColor Cyan
+function Install-Openclawder {
+    Write-Host "Installing openclawder..." -ForegroundColor Cyan
 
     $arch = Get-Architecture
     if ($arch -eq "unsupported") {
@@ -39,7 +39,7 @@ function Install-Clauder {
     Write-Host "  Arch: $arch"
     Write-Host "  Version: $version"
 
-    $binary = "clauder-windows-$arch.exe"
+    $binary = "openclawder-windows-$arch.exe"
     $url = "https://github.com/$Repo/releases/download/$version/$binary"
 
     Write-Host "  Downloading from: $url"
@@ -49,13 +49,13 @@ function Install-Clauder {
         New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     }
 
-    $dest = Join-Path $InstallDir "clauder.exe"
+    $dest = Join-Path $InstallDir "openclawder.exe"
 
     # Download binary
     Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
 
     Write-Host ""
-    Write-Host "Installed clauder to $dest" -ForegroundColor Green
+    Write-Host "Installed openclawder to $dest" -ForegroundColor Green
 
     # Check if install dir is in PATH
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -73,7 +73,7 @@ function Install-Clauder {
     }
 
     Write-Host ""
-    Write-Host "Run 'clauder setup' to configure your AI coding tool." -ForegroundColor Cyan
+    Write-Host "Run 'openclawder setup' to configure your AI coding tool." -ForegroundColor Cyan
 }
 
-Install-Clauder
+Install-Openclawder

@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/maorbril/clauder/internal/store"
+	"github.com/orsi-bit/openclawder/internal/store"
 	"github.com/spf13/cobra"
 )
 

@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/maorbril/clauder/internal/store"
-	"github.com/maorbril/clauder/internal/telemetry"
+	"github.com/orsi-bit/openclawder/internal/store"
+	"github.com/orsi-bit/openclawder/internal/telemetry"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -26,21 +26,21 @@ func init() {
 
 var wrapCmd = &cobra.Command{
 	Use:   "wrap [flags] [-- claude args...]",
-	Short: "Run Claude Code with clauder wrapper",
+	Short: "Run Claude Code with openclawder wrapper",
 	Long: `Runs Claude Code as a subprocess with full terminal passthrough.
 
-This wrapper mode allows clauder to intercept and augment Claude Code sessions.
-Use -- to separate clauder flags from arguments passed to Claude Code.
+This wrapper mode allows openclawder to intercept and augment Claude Code sessions.
+Use -- to separate openclawder flags from arguments passed to Claude Code.
 
 The wrapper monitors for incoming messages from other Claude instances and
 automatically prompts Claude to check them when the input line is empty.
 
 Examples:
-  clauder wrap                              # Start interactive Claude Code session
-  clauder wrap -- -p "fix the bug"          # Pass a prompt to Claude Code
-  clauder wrap -- --resume                  # Resume previous session
-  clauder wrap --name backend               # Named instance
-  clauder wrap --name backend -- --resume   # Named instance with claude args`,
+  openclawder wrap                              # Start interactive Claude Code session
+  openclawder wrap -- -p "fix the bug"          # Pass a prompt to Claude Code
+  openclawder wrap -- --resume                  # Resume previous session
+  openclawder wrap --name backend               # Named instance
+  openclawder wrap --name backend -- --resume   # Named instance with claude args`,
 	DisableFlagParsing: true,
 	RunE:               runWrap,
 }
@@ -222,11 +222,11 @@ func (w *messageWatcher) checkAndInject() {
 	var prompt string
 	if w.instanceName != "" {
 		// Named instance - simple prompt
-		prompt = "[You have a new message] - Read your clauder messages using get_messages and respond to them."
+		prompt = "[You have a new message] - Read your openclawder messages using get_messages and respond to them."
 	} else if len(unreadFor) == 1 {
-		prompt = fmt.Sprintf("[New message for '%s'] - Read your clauder messages using get_messages.", unreadFor[0])
+		prompt = fmt.Sprintf("[New message for '%s'] - Read your openclawder messages using get_messages.", unreadFor[0])
 	} else {
-		prompt = fmt.Sprintf("[Messages for %d instances] - Read your clauder messages using get_messages.", len(unreadFor))
+		prompt = fmt.Sprintf("[Messages for %d instances] - Read your openclawder messages using get_messages.", len(unreadFor))
 	}
 
 	w.inject(prompt)
@@ -334,7 +334,7 @@ func runWrap(cmd *cobra.Command, args []string) error {
 
 	// Pass instance name to inner session via environment variable
 	if wrapInstanceName != "" {
-		c.Env = append(os.Environ(), "CLAUDER_INSTANCE_NAME="+wrapInstanceName)
+		c.Env = append(os.Environ(), "OPENCLAWDER_INSTANCE_NAME="+wrapInstanceName)
 	}
 
 	// Start the command with a PTY

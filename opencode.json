@@ -1,9 +1,9 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "clauder": {
+    "openclawder": {
       "command": [
-        "/usr/local/bin/clauder",
+        "/usr/local/bin/openclawder",
         "serve"
       ],
       "enabled": true,

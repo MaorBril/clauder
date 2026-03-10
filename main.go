@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/maorbril/clauder/cmd"
+	"github.com/orsi-bit/openclawder/cmd"
 )
 
 func main() {

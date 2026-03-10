@@ -14,7 +14,7 @@ import (
 
 func setupTempHome(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir, err := os.MkdirTemp("", "clauder-setup-test-*")
+	tmpDir, err := os.MkdirTemp("", "openclawder-setup-test-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
@@ -26,7 +26,7 @@ func setupTempHome(t *testing.T) (string, func()) {
 
 func setupTempProject(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir, err := os.MkdirTemp("", "clauder-project-test-*")
+	tmpDir, err := os.MkdirTemp("", "openclawder-project-test-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestSetupGlobalConfig_NewFile(t *testing.T) {
 	restoreHome := setTestHome(t, tmpHome)
 	defer restoreHome()
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 	setupAllowAll = false
 
 	err := setupGlobalConfig(binaryPath)
@@ -108,9 +108,9 @@ func TestSetupGlobalConfig_NewFile(t *testing.T) {
 		t.Fatal("expected mcpServers in config")
 	}
 
-	clauder, ok := mcpServers["clauder"].(map[string]interface{})
+	clauder, ok := mcpServers["openclawder"].(map[string]interface{})
 	if !ok {
-		t.Fatal("expected clauder in mcpServers")
+		t.Fatal("expected openclawder in mcpServers")
 	}
 
 	if clauder["command"] != binaryPath {
@@ -144,7 +144,7 @@ func TestSetupGlobalConfig_MergeExisting(t *testing.T) {
 	data, _ := json.MarshalIndent(existingConfig, "", "  ")
 	writeTestFile(t, configPath, data)
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 	setupAllowAll = false
 
 	err := setupGlobalConfig(binaryPath)
@@ -175,8 +175,8 @@ func TestSetupGlobalConfig_MergeExisting(t *testing.T) {
 	}
 
 	// Check clauder added
-	if _, ok := mcpServers["clauder"]; !ok {
-		t.Error("expected clauder to be added")
+	if _, ok := mcpServers["openclawder"]; !ok {
+		t.Error("expected openclawder to be added")
 	}
 }
 
@@ -187,7 +187,7 @@ func TestSetupGlobalConfig_WithPermissions(t *testing.T) {
 	restoreHome := setTestHome(t, tmpHome)
 	defer restoreHome()
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 	setupAllowAll = true
 	defer func() { setupAllowAll = false }()
 
@@ -219,7 +219,7 @@ func TestSetupGlobalConfig_WithPermissions(t *testing.T) {
 	foundRemember := false
 	for _, p := range permissions {
 		perm := p.(map[string]interface{})
-		if perm["tool"] == "mcp__clauder__remember" {
+		if perm["tool"] == "mcp__openclawder__remember" {
 			foundRemember = true
 			if perm["allow"] != true {
 				t.Error("expected allow to be true")
@@ -227,7 +227,7 @@ func TestSetupGlobalConfig_WithPermissions(t *testing.T) {
 		}
 	}
 	if !foundRemember {
-		t.Error("expected mcp__clauder__remember in permissions")
+		t.Error("expected mcp__openclawder__remember in permissions")
 	}
 }
 
@@ -237,7 +237,7 @@ func TestSetupProjectConfig_NewFile(t *testing.T) {
 	_, cleanup := setupTempProject(t)
 	defer cleanup()
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 
 	err := setupProjectConfig(binaryPath)
 	if err != nil {
@@ -254,9 +254,9 @@ func TestSetupProjectConfig_NewFile(t *testing.T) {
 		t.Fatalf("failed to parse config: %v", err)
 	}
 
-	clauder, ok := config.McpServers["clauder"]
+	clauder, ok := config.McpServers["openclawder"]
 	if !ok {
-		t.Fatal("expected clauder in mcpServers")
+		t.Fatal("expected openclawder in mcpServers")
 	}
 
 	if clauder.Command != binaryPath {
@@ -284,7 +284,7 @@ func TestSetupProjectConfig_MergeExisting(t *testing.T) {
 	data, _ := json.MarshalIndent(existingConfig, "", "  ")
 	writeTestFile(t, ".mcp.json", data)
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 
 	err := setupProjectConfig(binaryPath)
 	if err != nil {
@@ -304,8 +304,8 @@ func TestSetupProjectConfig_MergeExisting(t *testing.T) {
 		t.Error("expected existingServer to be preserved")
 	}
 
-	if _, ok := config.McpServers["clauder"]; !ok {
-		t.Error("expected clauder to be added")
+	if _, ok := config.McpServers["openclawder"]; !ok {
+		t.Error("expected openclawder to be added")
 	}
 }
 
@@ -315,7 +315,7 @@ func TestSetupOpencodeConfig_NewFile(t *testing.T) {
 	_, cleanup := setupTempProject(t)
 	defer cleanup()
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 
 	err := setupOpencodeConfig(binaryPath)
 	if err != nil {
@@ -342,9 +342,9 @@ func TestSetupOpencodeConfig_NewFile(t *testing.T) {
 		t.Fatal("expected mcp in config")
 	}
 
-	clauder, ok := mcp["clauder"].(map[string]interface{})
+	clauder, ok := mcp["openclawder"].(map[string]interface{})
 	if !ok {
-		t.Fatal("expected clauder in mcp")
+		t.Fatal("expected openclawder in mcp")
 	}
 
 	if clauder["type"] != "local" {
@@ -382,7 +382,7 @@ func TestSetupOpencodeConfig_MergeExisting(t *testing.T) {
 	data, _ := json.MarshalIndent(existingConfig, "", "  ")
 	writeTestFile(t, "opencode.json", data)
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 
 	err := setupOpencodeConfig(binaryPath)
 	if err != nil {
@@ -406,8 +406,8 @@ func TestSetupOpencodeConfig_MergeExisting(t *testing.T) {
 	if _, ok := mcp["existingServer"]; !ok {
 		t.Error("expected existingServer to be preserved")
 	}
-	if _, ok := mcp["clauder"]; !ok {
-		t.Error("expected clauder to be added")
+	if _, ok := mcp["openclawder"]; !ok {
+		t.Error("expected openclawder to be added")
 	}
 }
 
@@ -420,7 +420,7 @@ func TestSetupCodexConfig_NewFile(t *testing.T) {
 	restoreHome := setTestHome(t, tmpHome)
 	defer restoreHome()
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 
 	err := setupCodexConfig(binaryPath)
 	if err != nil {
@@ -443,9 +443,9 @@ func TestSetupCodexConfig_NewFile(t *testing.T) {
 		t.Fatal("expected mcp_servers in config")
 	}
 
-	clauder, ok := mcpServers["clauder"].(map[string]interface{})
+	clauder, ok := mcpServers["openclawder"].(map[string]interface{})
 	if !ok {
-		t.Fatal("expected clauder in mcp_servers")
+		t.Fatal("expected openclawder in mcp_servers")
 	}
 
 	if clauder["command"] != binaryPath {
@@ -470,7 +470,7 @@ func TestSetupCodexConfig_CreatesDirectory(t *testing.T) {
 		t.Fatal("expected .codex directory to not exist initially")
 	}
 
-	err := setupCodexConfig("/usr/local/bin/clauder")
+	err := setupCodexConfig("/usr/local/bin/openclawder")
 	if err != nil {
 		t.Fatalf("setupCodexConfig failed: %v", err)
 	}
@@ -503,7 +503,7 @@ args = ["arg1"]
 `
 	writeTestFile(t, configPath, []byte(existingConfig))
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 
 	err := setupCodexConfig(binaryPath)
 	if err != nil {
@@ -532,8 +532,8 @@ args = ["arg1"]
 	if _, ok := mcpServers["existingServer"]; !ok {
 		t.Error("expected existingServer to be preserved")
 	}
-	if _, ok := mcpServers["clauder"]; !ok {
-		t.Error("expected clauder to be added")
+	if _, ok := mcpServers["openclawder"]; !ok {
+		t.Error("expected openclawder to be added")
 	}
 }
 
@@ -546,7 +546,7 @@ func TestSetupGeminiConfig_NewFile(t *testing.T) {
 	restoreHome := setTestHome(t, tmpHome)
 	defer restoreHome()
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 
 	err := setupGeminiConfig(binaryPath)
 	if err != nil {
@@ -569,9 +569,9 @@ func TestSetupGeminiConfig_NewFile(t *testing.T) {
 		t.Fatal("expected mcpServers in config")
 	}
 
-	clauder, ok := mcpServers["clauder"].(map[string]interface{})
+	clauder, ok := mcpServers["openclawder"].(map[string]interface{})
 	if !ok {
-		t.Fatal("expected clauder in mcpServers")
+		t.Fatal("expected openclawder in mcpServers")
 	}
 
 	if clauder["command"] != binaryPath {
@@ -596,7 +596,7 @@ func TestSetupGeminiConfig_CreatesDirectory(t *testing.T) {
 		t.Fatal("expected .gemini directory to not exist initially")
 	}
 
-	err := setupGeminiConfig("/usr/local/bin/clauder")
+	err := setupGeminiConfig("/usr/local/bin/openclawder")
 	if err != nil {
 		t.Fatalf("setupGeminiConfig failed: %v", err)
 	}
@@ -635,7 +635,7 @@ func TestSetupGeminiConfig_MergeExisting(t *testing.T) {
 	data, _ := json.MarshalIndent(existingConfig, "", "  ")
 	writeTestFile(t, configPath, data)
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 
 	err := setupGeminiConfig(binaryPath)
 	if err != nil {
@@ -669,8 +669,8 @@ func TestSetupGeminiConfig_MergeExisting(t *testing.T) {
 	if _, ok := mcpServers["existingServer"]; !ok {
 		t.Error("expected existingServer to be preserved")
 	}
-	if _, ok := mcpServers["clauder"]; !ok {
-		t.Error("expected clauder to be added")
+	if _, ok := mcpServers["openclawder"]; !ok {
+		t.Error("expected openclawder to be added")
 	}
 }
 
@@ -680,9 +680,9 @@ func TestSetupClaudeMD_NewFile(t *testing.T) {
 	_, cleanup := setupTempProject(t)
 	defer cleanup()
 
-	err := setupClaudeMD()
+	err := setupOpenclawderMD()
 	if err != nil {
-		t.Fatalf("setupClaudeMD failed: %v", err)
+		t.Fatalf("setupOpenclawderMD failed: %v", err)
 	}
 
 	data, err := os.ReadFile("CLAUDE.md")
@@ -694,10 +694,10 @@ func TestSetupClaudeMD_NewFile(t *testing.T) {
 	if !strings.Contains(content, "# Project Instructions") {
 		t.Error("expected Project Instructions header")
 	}
-	if !strings.Contains(content, "## Clauder - Persistent Memory MCP") {
+	if !strings.Contains(content, "## OpenClawder - Persistent Memory MCP") {
 		t.Error("expected Clauder section")
 	}
-	if !strings.Contains(content, "mcp__clauder__remember") {
+	if !strings.Contains(content, "mcp__openclawder__remember") {
 		t.Error("expected tool documentation")
 	}
 }
@@ -710,9 +710,9 @@ func TestSetupClaudeMD_AppendExisting(t *testing.T) {
 	existingContent := "# My Project\n\nSome existing instructions.\n"
 	writeTestFile(t, "CLAUDE.md", []byte(existingContent))
 
-	err := setupClaudeMD()
+	err := setupOpenclawderMD()
 	if err != nil {
-		t.Fatalf("setupClaudeMD failed: %v", err)
+		t.Fatalf("setupOpenclawderMD failed: %v", err)
 	}
 
 	data, err := os.ReadFile("CLAUDE.md")
@@ -724,7 +724,7 @@ func TestSetupClaudeMD_AppendExisting(t *testing.T) {
 	if !strings.Contains(content, "# My Project") {
 		t.Error("expected existing content to be preserved")
 	}
-	if !strings.Contains(content, "## Clauder - Persistent Memory MCP") {
+	if !strings.Contains(content, "## OpenClawder - Persistent Memory MCP") {
 		t.Error("expected Clauder section to be appended")
 	}
 }
@@ -733,13 +733,13 @@ func TestSetupClaudeMD_SkipIfExists(t *testing.T) {
 	_, cleanup := setupTempProject(t)
 	defer cleanup()
 
-	// Create CLAUDE.md with clauder section already
-	existingContent := "# My Project\n\n## Clauder - Persistent Memory MCP\n\nAlready configured.\n"
+	// Create CLAUDE.md with openclawder section already
+	existingContent := "# My Project\n\n## OpenClawder - Persistent Memory MCP\n\nAlready configured.\n"
 	writeTestFile(t, "CLAUDE.md", []byte(existingContent))
 
-	err := setupClaudeMD()
+	err := setupOpenclawderMD()
 	if err != nil {
-		t.Fatalf("setupClaudeMD failed: %v", err)
+		t.Fatalf("setupOpenclawderMD failed: %v", err)
 	}
 
 	data, err := os.ReadFile("CLAUDE.md")
@@ -749,9 +749,9 @@ func TestSetupClaudeMD_SkipIfExists(t *testing.T) {
 	content := string(data)
 
 	// Should not have duplicate sections
-	count := strings.Count(content, "## Clauder - Persistent Memory MCP")
+	count := strings.Count(content, "## OpenClawder - Persistent Memory MCP")
 	if count != 1 {
-		t.Errorf("expected exactly 1 clauder section, found %d", count)
+		t.Errorf("expected exactly 1 openclawder section, found %d", count)
 	}
 }
 
@@ -787,7 +787,7 @@ func TestSetupGlobalConfig_InvalidJSON(t *testing.T) {
 	configPath := filepath.Join(tmpHome, ".claude.json")
 	writeTestFile(t, configPath, []byte("invalid json {"))
 
-	err := setupGlobalConfig("/usr/local/bin/clauder")
+	err := setupGlobalConfig("/usr/local/bin/openclawder")
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}
@@ -809,7 +809,7 @@ func TestSetupCodexConfig_InvalidTOML(t *testing.T) {
 	configPath := filepath.Join(codexDir, "config.toml")
 	writeTestFile(t, configPath, []byte("invalid toml = ["))
 
-	err := setupCodexConfig("/usr/local/bin/clauder")
+	err := setupCodexConfig("/usr/local/bin/openclawder")
 	if err == nil {
 		t.Error("expected error for invalid TOML")
 	}
@@ -831,7 +831,7 @@ func TestSetupGeminiConfig_InvalidJSON(t *testing.T) {
 	configPath := filepath.Join(geminiDir, "settings.json")
 	writeTestFile(t, configPath, []byte("invalid json }"))
 
-	err := setupGeminiConfig("/usr/local/bin/clauder")
+	err := setupGeminiConfig("/usr/local/bin/openclawder")
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}
@@ -847,7 +847,7 @@ func TestSetupOpencodeConfig_InvalidJSON(t *testing.T) {
 	// Create invalid JSON config
 	writeTestFile(t, "opencode.json", []byte("not valid json"))
 
-	err := setupOpencodeConfig("/usr/local/bin/clauder")
+	err := setupOpencodeConfig("/usr/local/bin/openclawder")
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}
@@ -863,7 +863,7 @@ func TestSetupProjectConfig_InvalidJSON(t *testing.T) {
 	// Create invalid JSON config
 	writeTestFile(t, ".mcp.json", []byte("{ broken json"))
 
-	err := setupProjectConfig("/usr/local/bin/clauder")
+	err := setupProjectConfig("/usr/local/bin/openclawder")
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}
@@ -881,7 +881,7 @@ func TestSetupCursorConfig_NewFile(t *testing.T) {
 	restoreHome := setTestHome(t, tmpHome)
 	defer restoreHome()
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 
 	err := setupCursorConfig(binaryPath)
 	if err != nil {
@@ -899,9 +899,9 @@ func TestSetupCursorConfig_NewFile(t *testing.T) {
 		t.Fatalf("failed to parse config: %v", err)
 	}
 
-	clauder, ok := config.McpServers["clauder"]
+	clauder, ok := config.McpServers["openclawder"]
 	if !ok {
-		t.Fatal("expected clauder in mcpServers")
+		t.Fatal("expected openclawder in mcpServers")
 	}
 
 	if clauder.Command != binaryPath {
@@ -925,7 +925,7 @@ func TestSetupCursorConfig_CreatesDirectory(t *testing.T) {
 		t.Fatal("expected .cursor directory to not exist initially")
 	}
 
-	err := setupCursorConfig("/usr/local/bin/clauder")
+	err := setupCursorConfig("/usr/local/bin/openclawder")
 	if err != nil {
 		t.Fatalf("setupCursorConfig failed: %v", err)
 	}
@@ -958,7 +958,7 @@ func TestSetupCursorConfig_MergeExisting(t *testing.T) {
 	data, _ := json.MarshalIndent(existingConfig, "", "  ")
 	writeTestFile(t, configPath, data)
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 
 	err := setupCursorConfig(binaryPath)
 	if err != nil {
@@ -977,8 +977,8 @@ func TestSetupCursorConfig_MergeExisting(t *testing.T) {
 	if _, ok := config.McpServers["existingServer"]; !ok {
 		t.Error("expected existingServer to be preserved")
 	}
-	if _, ok := config.McpServers["clauder"]; !ok {
-		t.Error("expected clauder to be added")
+	if _, ok := config.McpServers["openclawder"]; !ok {
+		t.Error("expected openclawder to be added")
 	}
 }
 
@@ -995,7 +995,7 @@ func TestSetupCursorConfig_InvalidJSON(t *testing.T) {
 	configPath := filepath.Join(cursorDir, "mcp.json")
 	writeTestFile(t, configPath, []byte("invalid json }"))
 
-	err := setupCursorConfig("/usr/local/bin/clauder")
+	err := setupCursorConfig("/usr/local/bin/openclawder")
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}
@@ -1013,7 +1013,7 @@ func TestSetupWindsurfConfig_NewFile(t *testing.T) {
 	restoreHome := setTestHome(t, tmpHome)
 	defer restoreHome()
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 
 	err := setupWindsurfConfig(binaryPath)
 	if err != nil {
@@ -1031,9 +1031,9 @@ func TestSetupWindsurfConfig_NewFile(t *testing.T) {
 		t.Fatalf("failed to parse config: %v", err)
 	}
 
-	clauder, ok := config.McpServers["clauder"]
+	clauder, ok := config.McpServers["openclawder"]
 	if !ok {
-		t.Fatal("expected clauder in mcpServers")
+		t.Fatal("expected openclawder in mcpServers")
 	}
 
 	if clauder.Command != binaryPath {
@@ -1057,7 +1057,7 @@ func TestSetupWindsurfConfig_CreatesDirectory(t *testing.T) {
 		t.Fatal("expected .codeium/windsurf directory to not exist initially")
 	}
 
-	err := setupWindsurfConfig("/usr/local/bin/clauder")
+	err := setupWindsurfConfig("/usr/local/bin/openclawder")
 	if err != nil {
 		t.Fatalf("setupWindsurfConfig failed: %v", err)
 	}
@@ -1090,7 +1090,7 @@ func TestSetupWindsurfConfig_MergeExisting(t *testing.T) {
 	data, _ := json.MarshalIndent(existingConfig, "", "  ")
 	writeTestFile(t, configPath, data)
 
-	binaryPath := "/usr/local/bin/clauder"
+	binaryPath := "/usr/local/bin/openclawder"
 
 	err := setupWindsurfConfig(binaryPath)
 	if err != nil {
@@ -1109,8 +1109,8 @@ func TestSetupWindsurfConfig_MergeExisting(t *testing.T) {
 	if _, ok := config.McpServers["existingServer"]; !ok {
 		t.Error("expected existingServer to be preserved")
 	}
-	if _, ok := config.McpServers["clauder"]; !ok {
-		t.Error("expected clauder to be added")
+	if _, ok := config.McpServers["openclawder"]; !ok {
+		t.Error("expected openclawder to be added")
 	}
 }
 
@@ -1127,7 +1127,7 @@ func TestSetupWindsurfConfig_InvalidJSON(t *testing.T) {
 	configPath := filepath.Join(windsurfDir, "mcp_config.json")
 	writeTestFile(t, configPath, []byte("invalid json }"))
 
-	err := setupWindsurfConfig("/usr/local/bin/clauder")
+	err := setupWindsurfConfig("/usr/local/bin/openclawder")
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}

@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/maorbril/clauder/internal/store"
+	"github.com/orsi-bit/openclawder/internal/store"
 )
 
 func setupTestServer(t *testing.T) (*Server, func()) {
 	t.Helper()
-	tmpDir, err := os.MkdirTemp("", "clauder-mcp-test-*")
+	tmpDir, err := os.MkdirTemp("", "openclawder-mcp-test-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}

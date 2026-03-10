@@ -6,28 +6,28 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/maorbril/clauder/internal/telemetry"
+	"github.com/orsi-bit/openclawder/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "clauder",
-	Short: "Claude Code harness for persistent memory and instance communication",
-	Long: `Clauder is an MCP server that provides Claude Code with:
+	Use:   "openclawder",
+	Short: "AI agent harness for persistent memory and instance communication",
+	Long: `OpenClawder is an MCP server that provides Claude Code with:
 - Persistent memory (facts, decisions, context) across sessions
 - Multi-instance discovery and messaging across directories
 - Automatic context injection based on working directory`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		fmt.Fprintf(os.Stderr, "[clauder] PersistentPreRun starting...\n")
+		fmt.Fprintf(os.Stderr, "[openclawder] PersistentPreRun starting...\n")
 		telemetry.SetVersion(Version)
-		fmt.Fprintf(os.Stderr, "[clauder] Initializing telemetry...\n")
+		fmt.Fprintf(os.Stderr, "[openclawder] Initializing telemetry...\n")
 		telemetry.Init()
-		fmt.Fprintf(os.Stderr, "[clauder] Telemetry initialized\n")
+		fmt.Fprintf(os.Stderr, "[openclawder] Telemetry initialized\n")
 		// Track command usage (skip root command itself)
-		if cmd.Name() != "clauder" {
+		if cmd.Name() != "openclawder" {
 			telemetry.TrackCommand(cmd.Name())
 		}
-		fmt.Fprintf(os.Stderr, "[clauder] PersistentPreRun complete\n")
+		fmt.Fprintf(os.Stderr, "[openclawder] PersistentPreRun complete\n")
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		telemetry.Close()

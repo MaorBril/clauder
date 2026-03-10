@@ -1,4 +1,4 @@
-BINARY_NAME=clauder
+BINARY_NAME=openclawder
 BUILD_TAGS=fts5
 
 .PHONY: build install clean test run format lint

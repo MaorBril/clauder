@@ -117,7 +117,7 @@ func (s *SQLiteStore) InitIndex(instanceID string) error {
 
 // debugLog writes debug output to stderr
 func debugLog(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "[clauder] "+format+"\n", args...)
+	fmt.Fprintf(os.Stderr, "[openclawder] "+format+"\n", args...)
 }
 
 // cleanupStaleIndexes removes index directories for processes that are no longer running

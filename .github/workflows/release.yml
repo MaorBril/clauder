@@ -49,11 +49,11 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: '0'
         run: |
-          go build -ldflags="-s -w" -o "clauder-${{ matrix.suffix }}" .
+          go build -ldflags="-s -w" -o "openclawder-${{ matrix.suffix }}" .
 
       - name: Upload release asset
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
         run: |
-          gh release upload "${TAG}" "clauder-${{ matrix.suffix }}" --clobber
+          gh release upload "${TAG}" "openclawder-${{ matrix.suffix }}" --clobber

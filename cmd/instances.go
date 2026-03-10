@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/maorbril/clauder/internal/store"
+	"github.com/orsi-bit/openclawder/internal/store"
 	"github.com/spf13/cobra"
 )
 
 var instancesCmd = &cobra.Command{
 	Use:   "instances",
-	Short: "List running clauder instances",
-	Long:  `List all running clauder instances across different directories.`,
+	Short: "List running openclawder instances",
+	Long:  `List all running openclawder instances across different directories.`,
 	RunE:  runInstances,
 }
 

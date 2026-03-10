@@ -1,11 +1,11 @@
 #!/bin/sh
 set -e
 
-# Clauder installer script
-# Usage: curl -sSL https://raw.githubusercontent.com/MaorBril/clauder/main/install.sh | sh
+# openclawder installer script
+# Usage: curl -sSL https://raw.githubusercontent.com/orsi-bit/openclawder/main/install.sh | sh
 
-REPO="MaorBril/clauder"
-INSTALL_DIR="${CLAUDER_INSTALL_DIR:-$HOME/.local/bin}"
+REPO="orsi-bit/openclawder"
+INSTALL_DIR="${OPENCLAWDER_INSTALL_DIR:-$HOME/.local/bin}"
 
 # Detect OS
 detect_os() {
@@ -34,7 +34,7 @@ get_latest_version() {
 }
 
 main() {
-    echo "Installing clauder..."
+    echo "Installing openclawder..."
 
     OS=$(detect_os)
     ARCH=$(detect_arch)
@@ -56,7 +56,7 @@ main() {
     echo "  Version: $VERSION"
 
     # Build download URL
-    BINARY="clauder-${OS}-${ARCH}"
+    BINARY="openclawder-${OS}-${ARCH}"
     if [ "$OS" = "windows" ]; then
         BINARY="${BINARY}.exe"
     fi
@@ -68,7 +68,7 @@ main() {
     mkdir -p "$INSTALL_DIR"
 
     # Download binary
-    DEST="${INSTALL_DIR}/clauder"
+    DEST="${INSTALL_DIR}/openclawder"
     if [ "$OS" = "windows" ]; then
         DEST="${DEST}.exe"
     fi
@@ -86,21 +86,21 @@ main() {
     chmod +x "$DEST"
 
     echo ""
-    echo "Installed clauder to $DEST"
+    echo "Installed openclawder to $DEST"
 
     # Check if install dir is in PATH
     case ":$PATH:" in
         *":$INSTALL_DIR:"*) ;;
         *)
             echo ""
-            echo "Add clauder to your PATH by adding this to your shell profile:"
+            echo "Add openclawder to your PATH by adding this to your shell profile:"
             echo ""
             echo "  export PATH=\"\$PATH:$INSTALL_DIR\""
             echo ""
             ;;
     esac
 
-    echo "Run 'clauder setup' to configure your AI coding tool."
+    echo "Run 'openclawder setup' to configure your AI coding tool."
 }
 
 main

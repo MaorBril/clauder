@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/maorbril/clauder/internal/mcp"
-	"github.com/maorbril/clauder/internal/store"
-	"github.com/maorbril/clauder/internal/telemetry"
+	"github.com/orsi-bit/openclawder/internal/mcp"
+	"github.com/orsi-bit/openclawder/internal/store"
+	"github.com/orsi-bit/openclawder/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +25,7 @@ func init() {
 var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the MCP server for Claude Code",
-	Long:  `Starts clauder as an MCP server. This is typically invoked by Claude Code, not directly.`,
+	Long:  `Starts openclawder as an MCP server. This is typically invoked by Claude Code, not directly.`,
 	RunE:  runServe,
 }
 
@@ -45,7 +45,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Check env var for instance name (passed from wrap command)
 	name := instanceName
 	if name == "" {
-		name = os.Getenv("CLAUDER_INSTANCE_NAME")
+		name = os.Getenv("OPENCLAWDER_INSTANCE_NAME")
 	}
 
 	// Generate directory ID (used for grouping instances in same directory)
@@ -62,12 +62,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if name == "" {
 		hasActive, err := s.CheckDirectoryHasActiveInstance(directoryID)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[clauder] WARNING: failed to check for existing instances: %v\n", err)
+			fmt.Fprintf(os.Stderr, "[openclawder] WARNING: failed to check for existing instances: %v\n", err)
 		} else if hasActive {
 			// Collision detected - auto-generate a unique name
 			name = generateShortID()
 			autoNamed = true
-			fmt.Fprintf(os.Stderr, "[clauder] Multiple instances detected in directory, using auto-generated name: %s\n", name)
+			fmt.Fprintf(os.Stderr, "[openclawder] Multiple instances detected in directory, using auto-generated name: %s\n", name)
 			telemetry.TrackMultiInstance()
 		}
 	}
@@ -82,15 +82,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// This prevents file locking issues when multiple processes run in the same directory
 	indexID := fmt.Sprintf("%d", os.Getpid())
 
-	fmt.Fprintf(os.Stderr, "[clauder] PID=%d starting, workDir=%s, instanceID=%s, indexID=%s\n", os.Getpid(), workDir, instanceID, indexID)
+	fmt.Fprintf(os.Stderr, "[openclawder] PID=%d starting, workDir=%s, instanceID=%s, indexID=%s\n", os.Getpid(), workDir, instanceID, indexID)
 
 	// Initialize per-process Bleve index for full-text search
-	fmt.Fprintf(os.Stderr, "[clauder] Initializing Bleve index...\n")
+	fmt.Fprintf(os.Stderr, "[openclawder] Initializing Bleve index...\n")
 	if err := s.InitIndex(indexID); err != nil {
 		// Log warning but continue - search will fall back to SQLite
-		fmt.Fprintf(os.Stderr, "[clauder] WARNING: failed to initialize search index: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[openclawder] WARNING: failed to initialize search index: %v\n", err)
 	} else {
-		fmt.Fprintf(os.Stderr, "[clauder] Bleve index initialized successfully\n")
+		fmt.Fprintf(os.Stderr, "[openclawder] Bleve index initialized successfully\n")
 	}
 
 	// Register this instance

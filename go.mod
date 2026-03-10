@@ -1,4 +1,4 @@
-module github.com/maorbril/clauder
+module github.com/orsi-bit/openclawder
 
 go 1.24.5
 

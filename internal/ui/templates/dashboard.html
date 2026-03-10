@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Clauder Dashboard</title>
+    <title>OpenClawder Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -2844,17 +2844,17 @@
         let paletteOpen = false;
         let paletteSelectedIndex = 0;
         let paletteItems = [];
-        let recentCommands = JSON.parse(localStorage.getItem('clauder-recent-commands') || '[]');
+        let recentCommands = JSON.parse(localStorage.getItem('openclawder-recent-commands') || '[]');
 
         // Settings
         function loadSettings() {
             try {
-                return JSON.parse(localStorage.getItem('clauder-settings') || '{}');
+                return JSON.parse(localStorage.getItem('openclawder-settings') || '{}');
             } catch { return {}; }
         }
 
         function saveSettings(s) {
-            localStorage.setItem('clauder-settings', JSON.stringify(s));
+            localStorage.setItem('openclawder-settings', JSON.stringify(s));
         }
 
         function applySettings() {
@@ -2929,7 +2929,7 @@
                 factCount: allData.facts.length,
                 facts: allData.facts
             };
-            downloadFile(JSON.stringify(envelope, null, 2), 'clauder-facts.json', 'application/json');
+            downloadFile(JSON.stringify(envelope, null, 2), 'openclawder-facts.json', 'application/json');
             showToast('Facts exported as JSON', 'success');
         }
 
@@ -2939,7 +2939,7 @@
             allData.facts.forEach(f => {
                 rows.push([f.id, esc(f.content), esc((f.tags||[]).join(';')), esc(f.sourceDir), f.createdAt].join(','));
             });
-            downloadFile(rows.join('\n'), 'clauder-facts.csv', 'text/csv');
+            downloadFile(rows.join('\n'), 'openclawder-facts.csv', 'text/csv');
             showToast('Facts exported as CSV', 'success');
         }
 
@@ -3496,7 +3496,7 @@
 
             return `
                 <div class="context-window-section">
-                    <div class="context-window-header">Context Window (clauder contribution)</div>
+                    <div class="context-window-header">Context Window (openclawder contribution)</div>
                     <div class="context-gauge">
                         <div class="context-gauge-segment facts" style="width: ${factPct}%"></div>
                         <div class="context-gauge-segment messages" style="width: ${msgPct}%"></div>
@@ -3565,7 +3565,7 @@
                 ${messagesHtml}
                 <div id="${contextPlaceholderId}">
                     <div class="context-window-section">
-                        <div class="context-window-header">Context Window (clauder contribution)</div>
+                        <div class="context-window-header">Context Window (openclawder contribution)</div>
                         <div class="context-loading"><div class="spinner"></div> Loading context window...</div>
                     </div>
                 </div>
@@ -3577,7 +3577,7 @@
                 if (el) el.innerHTML = renderContextWindow(data);
             }).catch(() => {
                 const el = document.getElementById(contextPlaceholderId);
-                if (el) el.innerHTML = '<div class="context-window-section"><div class="context-window-header">Context Window (clauder contribution)</div><div style="color: var(--muted); font-size: 0.8125rem;">Unable to load context window data</div></div>';
+                if (el) el.innerHTML = '<div class="context-window-section"><div class="context-window-header">Context Window (openclawder contribution)</div><div style="color: var(--muted); font-size: 0.8125rem;">Unable to load context window data</div></div>';
             });
         }
 
@@ -4689,7 +4689,7 @@
             // Track recent for static commands
             if (item.id && !item.id.startsWith('fact-') && !item.id.startsWith('inst-') && !item.id.startsWith('msg-')) {
                 recentCommands = [item.id, ...recentCommands.filter(id => id !== item.id)].slice(0, 5);
-                localStorage.setItem('clauder-recent-commands', JSON.stringify(recentCommands));
+                localStorage.setItem('openclawder-recent-commands', JSON.stringify(recentCommands));
             }
             closePalette();
             if (item.action) item.action();

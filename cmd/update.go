@@ -18,10 +18,10 @@ const (
 	Version = "0.9.2"
 
 	// GitHubOwner is the GitHub repository owner
-	GitHubOwner = "MaorBril"
+	GitHubOwner = "orsi-bit"
 
 	// GitHubRepo is the GitHub repository name
-	GitHubRepo = "clauder"
+	GitHubRepo = "openclawder"
 )
 
 var (
@@ -31,7 +31,7 @@ var (
 var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Check for and install updates",
-	Long:  `Check GitHub releases for a newer version of clauder and optionally install it.`,
+	Long:  `Check GitHub releases for a newer version of openclawder and optionally install it.`,
 	RunE:  runUpdate,
 }
 
@@ -70,7 +70,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("New version available: %s\n", latestVersion)
 
 	if checkOnly {
-		fmt.Println("\nRun 'clauder update' without --check to install the update.")
+		fmt.Println("\nRun 'openclawder update' without --check to install the update.")
 		return nil
 	}
 
@@ -101,7 +101,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Download to a temporary file
-	tmpFile, err := os.CreateTemp(filepath.Dir(execPath), "clauder-update-*")
+	tmpFile, err := os.CreateTemp(filepath.Dir(execPath), "openclawder-update-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
@@ -193,7 +193,7 @@ func getAssetName() string {
 		arch = "arm64"
 	}
 
-	name := fmt.Sprintf("clauder-%s-%s", os, arch)
+	name := fmt.Sprintf("openclawder-%s-%s", os, arch)
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}

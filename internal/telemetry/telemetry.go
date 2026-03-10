@@ -28,7 +28,7 @@ var (
 func Init() {
 	once.Do(func() {
 		// Check for opt-out
-		if os.Getenv("CLAUDER_NO_TELEMETRY") != "" || os.Getenv("DO_NOT_TRACK") == "1" {
+		if os.Getenv("OPENCLAWDER_NO_TELEMETRY") != "" || os.Getenv("DO_NOT_TRACK") == "1" {
 			disabled = true
 			return
 		}
