@@ -143,6 +143,7 @@ type messageWatcher struct {
 	idleTime     time.Duration
 	cooldown     time.Duration
 	lastInjected time.Time
+	injectMu     sync.Mutex // serializes PTY injections to prevent interleaving
 }
 
 func newMessageWatcher(s store.Store, workDir, directoryID, instanceName string, ptmx *os.File, tracker *inputTracker) *messageWatcher {
@@ -241,14 +242,15 @@ func (w *messageWatcher) checkAndInject() {
 }
 
 func (w *messageWatcher) inject(text string) {
-	// Send characters one by one with small delays to simulate typing.
-	// 10ms per char avoids interleaving with PTY output that garbles the text.
-	for _, ch := range text {
-		_, _ = w.ptmx.WriteString(string(ch))
-		time.Sleep(10 * time.Millisecond)
-	}
+	w.injectMu.Lock()
+	defer w.injectMu.Unlock()
+
+	// Write the full text in one shot to preserve spaces.
+	// Character-by-character injection was causing spaces to be dropped
+	// by the PTY/terminal input handler.
+	_, _ = w.ptmx.WriteString(text)
 	// Send Enter (CR - what terminal Enter key sends in raw mode)
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	_, _ = w.ptmx.WriteString("\r")
 }
 
@@ -415,7 +417,7 @@ func runWrap(cmd *cobra.Command, args []string) error {
 		// Inject telegram messages directly into the PTY so they don't
 		// require manual confirmation on the Claude Code instance.
 		tgBot.SetInjector(func(text string) {
-			prompt := fmt.Sprintf("[Telegram] %s", text)
+			prompt := fmt.Sprintf("[Telegram] %s\nReply to the user via Telegram using send_message with to=\"telegram\".", text)
 			watcher.inject(prompt)
 		})
 		if err := tgBot.Start(); err != nil {

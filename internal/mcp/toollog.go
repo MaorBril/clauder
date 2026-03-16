@@ -205,7 +205,7 @@ func summarizeBulkRemember(text string) string {
 	return `{"stored":0}`
 }
 
-func summarizeUpdateFact(text string, args map[string]interface{}) string {
+func summarizeUpdateFact(_ string, args map[string]interface{}) string {
 	id := jsonNum(args["id"])
 	return fmt.Sprintf(`{"fact_id":%s}`, id)
 }

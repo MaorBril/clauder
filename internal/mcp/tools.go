@@ -356,6 +356,16 @@ func (s *Server) toolSendMessage(args map[string]interface{}) ToolResult {
 		return errorResult(fmt.Sprintf("message exceeds maximum size of %d bytes", MaxMessageSize))
 	}
 
+	// Special case: "telegram" is a virtual recipient — the Telegram bot's
+	// outboundLoop polls for messages addressed to "telegram" and forwards
+	// them to the paired Telegram chat.
+	if strings.EqualFold(to, "telegram") {
+		if _, err := s.store.SendMessage(s.instanceID, "telegram", content); err != nil {
+			return errorResult(fmt.Sprintf("failed to send message to Telegram: %v", err))
+		}
+		return textResult("Message sent to Telegram")
+	}
+
 	broadcast, _ := args["broadcast"].(bool)
 
 	// Check if this looks like a directory ID (no colon) or explicit broadcast
@@ -878,24 +888,3 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-// getUnreadCount returns the number of unread messages for this instance
-func (s *Server) getUnreadCount() int {
-	messages, err := s.store.GetMessages(s.instanceID, true)
-	if err != nil {
-		return 0
-	}
-	return len(messages)
-}
-
-// appendNotifications adds unread message count to results (except get_messages itself)
-func (s *Server) appendNotifications(result ToolResult, skipMessages bool) ToolResult {
-	if skipMessages {
-		return result
-	}
-	unreadCount := s.getUnreadCount()
-	if unreadCount > 0 && len(result.Content) > 0 {
-		notification := fmt.Sprintf("\n\n---\n📬 You have %d unread message(s). Use `get_messages` to read them.", unreadCount)
-		result.Content[0].Text += notification
-	}
-	return result
-}
