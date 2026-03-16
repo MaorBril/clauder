@@ -136,6 +136,7 @@ func (b *Bot) receiveLoop() {
 
 	consecutiveErrors := 0
 	const maxConsecutiveErrors = 3
+	lastUpdateID := 0
 
 	for {
 		select {
@@ -144,7 +145,7 @@ func (b *Bot) receiveLoop() {
 		default:
 		}
 
-		u := tgbotapi.NewUpdate(0)
+		u := tgbotapi.NewUpdate(lastUpdateID + 1)
 		u.Timeout = 30
 
 		updates, err := b.api.GetUpdates(u)
@@ -165,6 +166,9 @@ func (b *Bot) receiveLoop() {
 
 		consecutiveErrors = 0
 		for _, update := range updates {
+			if update.UpdateID >= lastUpdateID {
+				lastUpdateID = update.UpdateID
+			}
 			if update.Message == nil || update.Message.Chat.ID != b.chatID {
 				continue
 			}
