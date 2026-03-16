@@ -39,6 +39,7 @@ From any Claude session:
 ## What Else?
 
 - **Persistent Memory**: Facts and decisions survive session restarts
+- **Telegram Bridge**: Control sessions from your phone — no exposed ports
 - **Web Dashboard**: See all running instances, messages, and stored context
 - **Works Everywhere**: Claude Code, Cursor, Windsurf, OpenCode, Codex CLI, Gemini CLI
 
@@ -191,6 +192,32 @@ Start the server (typically done automatically by Claude Code):
 clauder serve
 ```
 
+### Telegram Bridge
+
+Control your Claude Code session from your phone via Telegram. No exposed ports, no web server — just a Telegram bot bridging messages to your terminal.
+
+```bash
+# First time: set your bot token
+export CLAUDER_TELEGRAM_TOKEN="your-bot-token"
+
+# Start a wrapped session with Telegram enabled
+clauder wrap --telegram
+```
+
+On first run, a QR code appears in your terminal. Scan it with your phone to pair the Telegram bot. After that, messages you send in Telegram get injected directly into your Claude session, and responses come back to Telegram.
+
+```bash
+# Combine with named instances
+clauder wrap --telegram --name backend
+```
+
+**How to get a bot token:**
+1. Message [@BotFather](https://t.me/BotFather) on Telegram
+2. Send `/newbot` and follow the prompts
+3. Copy the token and set it as `CLAUDER_TELEGRAM_TOKEN`
+
+Only one instance can use `--telegram` at a time (enforced via instance locking with stale PID detection).
+
 ### Multiple Instances in Same Directory
 
 Running multiple Claude sessions in the same project? Use the `--name` flag to differentiate them:
@@ -228,7 +255,7 @@ When used as an MCP server, clauder provides these tools:
 
 ## Data Storage
 
-All data is stored in `~/.clauder/` directory using SQLite.
+All data is stored in `~/.clauder/` directory using SQLite. Session logs (JSONL) are written to `~/.clauder/sessions/` and rotate at 50MB. Disable session logging with `CLAUDER_NO_SESSION_LOG=1`.
 
 ## Telemetry
 
