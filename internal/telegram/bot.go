@@ -18,14 +18,27 @@ const (
 	settingTelegramLock = "telegram_instance_lock"
 )
 
+// Injector is a callback that injects text directly into the Claude Code PTY.
+// When set, incoming Telegram messages are injected as prompts instead of
+// being stored as clauder messages (which would require manual confirmation).
+type Injector func(text string)
+
 // Bot bridges Telegram messages with clauder's messaging system.
 type Bot struct {
 	api        *tgbotapi.BotAPI
 	store      store.Store
 	instanceID string
 	chatID     int64
+	injector   Injector
 	stopCh     chan struct{}
 	wg         sync.WaitGroup
+}
+
+// SetInjector sets a callback that injects text directly into the Claude Code PTY.
+// When set, incoming messages bypass the clauder message store and are injected
+// as prompts immediately, without requiring user confirmation.
+func (b *Bot) SetInjector(fn Injector) {
+	b.injector = fn
 }
 
 // NewBot creates a Telegram bot. Token comes from CLAUDER_TELEGRAM_TOKEN env var.
@@ -176,9 +189,14 @@ func (b *Bot) receiveLoop() {
 			if text == "" {
 				continue
 			}
-			_, err := b.store.SendMessage("telegram", b.instanceID, text)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[clauder] telegram: failed to store message: %v\r\n", err)
+			if b.injector != nil {
+				// Inject directly into the PTY — no confirmation needed
+				b.injector(text)
+			} else {
+				_, err := b.store.SendMessage("telegram", b.instanceID, text)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "[clauder] telegram: failed to store message: %v\r\n", err)
+				}
 			}
 		}
 	}
