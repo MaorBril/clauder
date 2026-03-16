@@ -31,6 +31,7 @@ type Bot struct {
 	chatID     int64
 	injector   Injector
 	stopCh     chan struct{}
+	notifyCh   chan struct{} // signals outboundLoop to check for messages immediately
 	wg         sync.WaitGroup
 }
 
@@ -65,6 +66,7 @@ func NewBot(s store.Store, instanceID string) (*Bot, error) {
 		store:      s,
 		instanceID: instanceID,
 		stopCh:     make(chan struct{}),
+		notifyCh:   make(chan struct{}, 1),
 	}
 
 	// Load stored chat ID
@@ -202,6 +204,15 @@ func (b *Bot) receiveLoop() {
 	}
 }
 
+// Notify signals the outbound loop to check for messages immediately.
+// Non-blocking — safe to call from any goroutine.
+func (b *Bot) Notify() {
+	select {
+	case b.notifyCh <- struct{}{}:
+	default:
+	}
+}
+
 // outboundLoop watches for messages from the claude instance addressed to "telegram"
 // and forwards them to the Telegram chat.
 func (b *Bot) outboundLoop() {
@@ -214,6 +225,8 @@ func (b *Bot) outboundLoop() {
 		select {
 		case <-b.stopCh:
 			return
+		case <-b.notifyCh:
+			b.forwardOutbound()
 		case <-ticker.C:
 			b.forwardOutbound()
 		}

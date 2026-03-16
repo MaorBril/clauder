@@ -105,7 +105,7 @@ var activeFactsRe = regexp.MustCompile(`Active facts:\*\* (\d+)`)
 var instanceCountRe = regexp.MustCompile(`(\d+) running instance`)
 
 func summarizeGetContext(text string) string {
-	factCount := countOccurrences(text, "\n- ")
+	factCount := strings.Count(text, "\n- ")
 	messageCount := 0
 	if strings.Contains(text, "Unread Messages") {
 		// Count message entries after "Unread Messages" section
@@ -122,7 +122,7 @@ func summarizeGetContext(text string) string {
 }
 
 func summarizeGetGlobalContext(text string) string {
-	factCount := countOccurrences(text, "\n- ")
+	factCount := strings.Count(text, "\n- ")
 	dirCount := strings.Count(text, " facts)")
 	return fmt.Sprintf(`{"fact_count":%d,"dir_count":%d}`, factCount, dirCount)
 }
@@ -163,7 +163,7 @@ func summarizeGetMessages(text string) string {
 	}
 	count := strings.Count(text, "From:")
 	if count == 0 {
-		count = countOccurrences(text, "\n- ")
+		count = strings.Count(text, "\n- ")
 	}
 	return fmt.Sprintf(`{"message_count":%d}`, count)
 }
@@ -254,10 +254,6 @@ func summarizeListInstances(text string) string {
 }
 
 // --- helpers ---
-
-func countOccurrences(s, substr string) int {
-	return strings.Count(s, substr)
-}
 
 func jsonObj(key string, val interface{}) string {
 	data, _ := json.Marshal(map[string]interface{}{key: val})

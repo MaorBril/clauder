@@ -15,6 +15,9 @@ import (
 const (
 	Input  = "input"
 	Output = "output"
+
+	// MaxLogSize is the maximum session log file size before rotation (50MB).
+	MaxLogSize = 50 << 20
 )
 
 type headerRecord struct {
@@ -46,10 +49,13 @@ type SessionOpts struct {
 
 // SessionLogger writes session chunks to a JSONL file.
 type SessionLogger struct {
-	mu     sync.Mutex
-	file   *os.File
-	writer *bufio.Writer
-	closed bool
+	mu          sync.Mutex
+	file        *os.File
+	writer      *bufio.Writer
+	closed      bool
+	written     int64 // bytes written to current file
+	sessionsDir string
+	opts        SessionOpts
 }
 
 // IsEnabled returns true if session logging is not disabled via environment variable.
@@ -104,9 +110,13 @@ func NewSessionLogger(sessionsDir string, opts SessionOpts) (*SessionLogger, err
 	w.WriteByte('\n')
 	w.Flush()
 
+	headerSize := int64(len(data)) + 1 // +1 for newline
 	return &SessionLogger{
-		file:   f,
-		writer: w,
+		file:        f,
+		writer:      w,
+		written:     headerSize,
+		sessionsDir: sessionsDir,
+		opts:        opts,
 	}, nil
 }
 
@@ -134,8 +144,9 @@ func (sl *SessionLogger) LogChunk(dir string, data []byte) {
 		return
 	}
 
-	sl.writer.Write(j)
+	n, _ := sl.writer.Write(j)
 	sl.writer.WriteByte('\n')
+	sl.written += int64(n) + 1
 
 	// Flush on input — input is infrequent and we want it persisted promptly
 	if dir == Input {
@@ -143,6 +154,29 @@ func (sl *SessionLogger) LogChunk(dir string, data []byte) {
 			fmt.Fprintf(os.Stderr, "[clauder] session log flush error: %v\n", err)
 		}
 	}
+
+	// Rotate if file exceeds max size
+	if sl.written >= MaxLogSize {
+		sl.rotate()
+	}
+}
+
+// rotate closes the current log file and opens a new one.
+// Must be called with mu held.
+func (sl *SessionLogger) rotate() {
+	_ = sl.writer.Flush()
+	_ = sl.file.Close()
+
+	newLogger, err := NewSessionLogger(sl.sessionsDir, sl.opts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[clauder] session log rotation failed: %v\n", err)
+		sl.closed = true
+		return
+	}
+
+	sl.file = newLogger.file
+	sl.writer = newLogger.writer
+	sl.written = newLogger.written
 }
 
 // Close flushes and closes the session log file.
