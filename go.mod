@@ -5,9 +5,11 @@ go 1.24.5
 require (
 	github.com/blevesearch/bleve/v2 v2.5.7
 	github.com/creack/pty v1.1.24
+	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/posthog/posthog-go v1.9.1
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/term v0.39.0
 	modernc.org/sqlite v1.44.0

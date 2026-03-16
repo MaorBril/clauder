@@ -428,7 +428,6 @@ func (s *Server) handleToolCall(req *Request) {
 	}
 
 	var result ToolResult
-	skipMessageNotification := false
 
 	switch params.Name {
 	case "remember":
@@ -447,7 +446,6 @@ func (s *Server) handleToolCall(req *Request) {
 		result = s.toolSendMessage(params.Arguments)
 	case "get_messages":
 		result = s.toolGetMessages(params.Arguments)
-		skipMessageNotification = true // Don't remind about messages when they're already reading them
 	case "compact_context":
 		result = s.toolCompactContext(params.Arguments)
 	case "bulk_forget":
@@ -469,10 +467,9 @@ func (s *Server) handleToolCall(req *Request) {
 		}
 	}
 
-	// Append unread message notification to non-error results
-	if !result.IsError {
-		result = s.appendNotifications(result, skipMessageNotification)
-	}
+	// Log tool call summary to stderr for observability
+	fmt.Fprintf(os.Stderr, "[clauder] tool=%s args=%s result=%s\n",
+		params.Name, sanitizeArgs(params.Arguments), extractResultSummary(params.Name, params.Arguments, result))
 
 	s.sendResult(req.ID, result)
 }

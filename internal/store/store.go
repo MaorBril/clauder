@@ -140,6 +140,11 @@ type Store interface {
 	// Analytics
 	GetAnalytics(timeRange string) (*AnalyticsData, error)
 
+	// Settings (key-value config)
+	GetSetting(key string) (string, error)
+	SetSetting(key, value string) error
+	DeleteSetting(key string) error
+
 	// Lifecycle
 	Close() error
 }
