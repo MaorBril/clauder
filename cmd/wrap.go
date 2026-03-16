@@ -13,15 +13,20 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/maorbril/clauder/internal/store"
+	"github.com/maorbril/clauder/internal/telegram"
 	"github.com/maorbril/clauder/internal/telemetry"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
-var wrapInstanceName string
+var (
+	wrapInstanceName string
+	wrapTelegram     bool
+)
 
 func init() {
 	wrapCmd.Flags().StringVarP(&wrapInstanceName, "name", "n", "", "Instance name for multi-instance setups (e.g., 'backend', 'frontend')")
+	wrapCmd.Flags().BoolVar(&wrapTelegram, "telegram", false, "Enable Telegram bridge (requires CLAUDER_TELEGRAM_TOKEN)")
 }
 
 var wrapCmd = &cobra.Command{
@@ -40,7 +45,9 @@ Examples:
   clauder wrap -- -p "fix the bug"          # Pass a prompt to Claude Code
   clauder wrap -- --resume                  # Resume previous session
   clauder wrap --name backend               # Named instance
-  clauder wrap --name backend -- --resume   # Named instance with claude args`,
+  clauder wrap --name backend -- --resume   # Named instance with claude args
+  clauder wrap --telegram                   # Enable Telegram bridge
+  clauder wrap --telegram --name bot        # Telegram with named instance`,
 	DisableFlagParsing: true,
 	RunE:               runWrap,
 }
@@ -244,11 +251,17 @@ func (w *messageWatcher) inject(text string) {
 	_, _ = w.ptmx.WriteString("\r")
 }
 
+type wrapFlags struct {
+	name     string
+	telegram bool
+	help     bool
+}
+
 // parseWrapArgs splits args into clauder flags and claude args using "--" as separator.
-// Everything before "--" is parsed for clauder flags (--name, --help).
+// Everything before "--" is parsed for clauder flags (--name, --help, --telegram).
 // Everything after "--" is passed directly to claude.
 // If no "--" is present, all args are passed to claude for backwards compatibility.
-func parseWrapArgs(args []string) (name string, claudeArgs []string, help bool) {
+func parseWrapArgs(args []string) (flags wrapFlags, claudeArgs []string) {
 	// Find the "--" separator
 	sepIdx := -1
 	for i, arg := range args {
@@ -272,7 +285,7 @@ func parseWrapArgs(args []string) (name string, claudeArgs []string, help bool) 
 					i++
 					clauderArgs = append(clauderArgs, args[i])
 				}
-			} else if args[i] == "-h" || args[i] == "--help" {
+			} else if args[i] == "-h" || args[i] == "--help" || args[i] == "--telegram" {
 				clauderArgs = append(clauderArgs, args[i])
 			} else {
 				claudeArgs = append(claudeArgs, args[i])
@@ -286,23 +299,26 @@ func parseWrapArgs(args []string) (name string, claudeArgs []string, help bool) 
 		case "--name", "-n":
 			if i+1 < len(clauderArgs) {
 				i++
-				name = clauderArgs[i]
+				flags.name = clauderArgs[i]
 			}
+		case "--telegram":
+			flags.telegram = true
 		case "-h", "--help":
-			help = true
+			flags.help = true
 		}
 	}
 
-	return name, claudeArgs, help
+	return flags, claudeArgs
 }
 
 func runWrap(cmd *cobra.Command, args []string) error {
 	// Parse clauder flags vs claude args
-	name, claudeArgs, showHelp := parseWrapArgs(args)
-	if showHelp {
+	flags, claudeArgs := parseWrapArgs(args)
+	if flags.help {
 		return cmd.Help()
 	}
-	wrapInstanceName = name
+	wrapInstanceName = flags.name
+	wrapTelegram = flags.telegram
 
 	// Check if stdin is a terminal
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
@@ -384,6 +400,22 @@ func runWrap(cmd *cobra.Command, args []string) error {
 	watcher := newMessageWatcher(s, workDir, directoryID, wrapInstanceName, ptmx, tracker)
 	watcher.Start()
 	defer watcher.Stop()
+
+	// Start Telegram bot if requested
+	if wrapTelegram {
+		tgInstanceID := directoryID
+		if wrapInstanceName != "" {
+			tgInstanceID = directoryID + ":" + wrapInstanceName
+		}
+		tgBot, err := telegram.NewBot(s, tgInstanceID)
+		if err != nil {
+			return fmt.Errorf("telegram: %w", err)
+		}
+		if err := tgBot.Start(); err != nil {
+			return fmt.Errorf("telegram: %w", err)
+		}
+		defer tgBot.Stop()
+	}
 
 	// Copy stdin to PTY with input tracking
 	go func() {

@@ -10,106 +10,121 @@ func TestParseWrapArgs(t *testing.T) {
 	tests := []struct {
 		name       string
 		args       []string
-		wantName   string
+		wantFlags  wrapFlags
 		wantClaude []string
-		wantHelp   bool
 	}{
 		{
 			name:       "no args",
 			args:       []string{},
-			wantName:   "",
+			wantFlags:  wrapFlags{},
 			wantClaude: nil,
-			wantHelp:   false,
 		},
 		{
 			name:       "only claude args (backwards compat)",
 			args:       []string{"-p", "fix the bug"},
-			wantName:   "",
+			wantFlags:  wrapFlags{},
 			wantClaude: []string{"-p", "fix the bug"},
-			wantHelp:   false,
 		},
 		{
 			name:       "double dash separator with claude args",
 			args:       []string{"--", "-p", "fix the bug"},
-			wantName:   "",
+			wantFlags:  wrapFlags{},
 			wantClaude: []string{"-p", "fix the bug"},
-			wantHelp:   false,
 		},
 		{
 			name:       "name flag with double dash",
 			args:       []string{"--name", "backend", "--", "--resume"},
-			wantName:   "backend",
+			wantFlags:  wrapFlags{name: "backend"},
 			wantClaude: []string{"--resume"},
-			wantHelp:   false,
 		},
 		{
 			name:       "short name flag with double dash",
 			args:       []string{"-n", "frontend", "--", "-p", "hello"},
-			wantName:   "frontend",
+			wantFlags:  wrapFlags{name: "frontend"},
 			wantClaude: []string{"-p", "hello"},
-			wantHelp:   false,
 		},
 		{
 			name:       "name flag without double dash",
 			args:       []string{"--name", "backend"},
-			wantName:   "backend",
+			wantFlags:  wrapFlags{name: "backend"},
 			wantClaude: nil,
-			wantHelp:   false,
 		},
 		{
 			name:       "name flag mixed with claude args no separator",
 			args:       []string{"--name", "backend", "--resume"},
-			wantName:   "backend",
+			wantFlags:  wrapFlags{name: "backend"},
 			wantClaude: []string{"--resume"},
-			wantHelp:   false,
 		},
 		{
 			name:       "help flag",
 			args:       []string{"--help"},
-			wantName:   "",
+			wantFlags:  wrapFlags{help: true},
 			wantClaude: nil,
-			wantHelp:   true,
 		},
 		{
 			name:       "help short flag",
 			args:       []string{"-h"},
-			wantName:   "",
+			wantFlags:  wrapFlags{help: true},
 			wantClaude: nil,
-			wantHelp:   true,
 		},
 		{
 			name:       "double dash only",
 			args:       []string{"--"},
-			wantName:   "",
+			wantFlags:  wrapFlags{},
 			wantClaude: nil,
-			wantHelp:   false,
 		},
 		{
 			name:       "name and help before double dash",
 			args:       []string{"--name", "test", "-h", "--"},
-			wantName:   "test",
+			wantFlags:  wrapFlags{name: "test", help: true},
 			wantClaude: nil,
-			wantHelp:   true,
 		},
 		{
 			name:       "resume session with double dash",
 			args:       []string{"--", "--resume", "1335765446"},
-			wantName:   "",
+			wantFlags:  wrapFlags{},
 			wantClaude: []string{"--resume", "1335765446"},
-			wantHelp:   false,
+		},
+		{
+			name:       "telegram flag with double dash",
+			args:       []string{"--telegram", "--", "-p", "hello"},
+			wantFlags:  wrapFlags{telegram: true},
+			wantClaude: []string{"-p", "hello"},
+		},
+		{
+			name:       "telegram flag without double dash",
+			args:       []string{"--telegram"},
+			wantFlags:  wrapFlags{telegram: true},
+			wantClaude: nil,
+		},
+		{
+			name:       "telegram with name and claude args",
+			args:       []string{"--name", "bot", "--telegram", "--", "--resume"},
+			wantFlags:  wrapFlags{name: "bot", telegram: true},
+			wantClaude: []string{"--resume"},
+		},
+		{
+			name:       "telegram without separator mixed with claude args",
+			args:       []string{"--telegram", "--name", "bot", "--resume"},
+			wantFlags:  wrapFlags{name: "bot", telegram: true},
+			wantClaude: []string{"--resume"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotName, gotClaude, gotHelp := parseWrapArgs(tt.args)
+			gotFlags, gotClaude := parseWrapArgs(tt.args)
 
-			if gotName != tt.wantName {
-				t.Errorf("name = %q, want %q", gotName, tt.wantName)
+			if gotFlags.name != tt.wantFlags.name {
+				t.Errorf("name = %q, want %q", gotFlags.name, tt.wantFlags.name)
 			}
 
-			if gotHelp != tt.wantHelp {
-				t.Errorf("help = %v, want %v", gotHelp, tt.wantHelp)
+			if gotFlags.help != tt.wantFlags.help {
+				t.Errorf("help = %v, want %v", gotFlags.help, tt.wantFlags.help)
+			}
+
+			if gotFlags.telegram != tt.wantFlags.telegram {
+				t.Errorf("telegram = %v, want %v", gotFlags.telegram, tt.wantFlags.telegram)
 			}
 
 			if len(gotClaude) != len(tt.wantClaude) {

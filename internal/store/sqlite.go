@@ -314,6 +314,13 @@ func (s *SQLiteStore) migrate() error {
 	_, _ = s.db.Exec("ALTER TABLE instances ADD COLUMN is_leader INTEGER DEFAULT 0")
 	_, _ = s.db.Exec("ALTER TABLE instances ADD COLUMN is_idle INTEGER DEFAULT 0")
 
+	// Migration: Add settings table for key-value config
+	_, _ = s.db.Exec(`CREATE TABLE IF NOT EXISTS settings (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`)
+
 	// Migration: Add directory_id and name columns for multi-instance support
 	_, _ = s.db.Exec("ALTER TABLE instances ADD COLUMN directory_id TEXT NOT NULL DEFAULT ''")
 	_, _ = s.db.Exec("ALTER TABLE instances ADD COLUMN name TEXT NOT NULL DEFAULT ''")
@@ -1497,6 +1504,30 @@ func (s *SQLiteStore) GetAnalytics(timeRange string) (*AnalyticsData, error) {
 	`).Scan(&data.MessagesLastWeek)
 
 	return data, nil
+}
+
+// Settings
+
+func (s *SQLiteStore) GetSetting(key string) (string, error) {
+	var value string
+	err := s.db.QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return value, err
+}
+
+func (s *SQLiteStore) SetSetting(key, value string) error {
+	_, err := s.db.Exec(
+		"INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?",
+		key, value, time.Now(), value, time.Now(),
+	)
+	return err
+}
+
+func (s *SQLiteStore) DeleteSetting(key string) error {
+	_, err := s.db.Exec("DELETE FROM settings WHERE key = ?", key)
+	return err
 }
 
 func (s *SQLiteStore) Close() error {
