@@ -22,11 +22,13 @@ import (
 var (
 	wrapInstanceName string
 	wrapTelegram     bool
+	wrapSlave        bool
 )
 
 func init() {
 	wrapCmd.Flags().StringVarP(&wrapInstanceName, "name", "n", "", "Instance name for multi-instance setups (e.g., 'backend', 'frontend')")
 	wrapCmd.Flags().BoolVar(&wrapTelegram, "telegram", false, "Enable Telegram bridge (requires CLAUDER_TELEGRAM_TOKEN)")
+	wrapCmd.Flags().BoolVar(&wrapSlave, "slave", false, "Run in slave mode with auto-approved permissions for autonomous operation")
 }
 
 var wrapCmd = &cobra.Command{
@@ -47,7 +49,8 @@ Examples:
   clauder wrap --name backend               # Named instance
   clauder wrap --name backend -- --resume   # Named instance with claude args
   clauder wrap --telegram                   # Enable Telegram bridge
-  clauder wrap --telegram --name bot        # Telegram with named instance`,
+  clauder wrap --telegram --name bot        # Telegram with named instance
+  clauder wrap --slave --name worker        # Autonomous slave instance`,
 	DisableFlagParsing: true,
 	RunE:               runWrap,
 }
@@ -257,7 +260,26 @@ func (w *messageWatcher) inject(text string) {
 type wrapFlags struct {
 	name     string
 	telegram bool
+	slave    bool
 	help     bool
+}
+
+// slaveAllowedTools returns the set of tools auto-approved in slave mode.
+// Allows file ops, search, bash, web access, and all MCP tools.
+// Does NOT use --dangerously-skip-permissions so Claude Code's built-in
+// safety checks (e.g., destructive bash commands) still apply.
+func slaveAllowedTools() []string {
+	return []string{
+		"Read",
+		"Write",
+		"Edit",
+		"Glob",
+		"Grep",
+		"Bash(*)",
+		"WebFetch",
+		"WebSearch",
+		"mcp__clauder__*",
+	}
 }
 
 // parseWrapArgs splits args into clauder flags and claude args using "--" as separator.
@@ -288,7 +310,7 @@ func parseWrapArgs(args []string) (flags wrapFlags, claudeArgs []string) {
 					i++
 					clauderArgs = append(clauderArgs, args[i])
 				}
-			} else if args[i] == "-h" || args[i] == "--help" || args[i] == "--telegram" {
+			} else if args[i] == "-h" || args[i] == "--help" || args[i] == "--telegram" || args[i] == "--slave" {
 				clauderArgs = append(clauderArgs, args[i])
 			} else {
 				claudeArgs = append(claudeArgs, args[i])
@@ -306,6 +328,8 @@ func parseWrapArgs(args []string) (flags wrapFlags, claudeArgs []string) {
 			}
 		case "--telegram":
 			flags.telegram = true
+		case "--slave":
+			flags.slave = true
 		case "-h", "--help":
 			flags.help = true
 		}
@@ -322,6 +346,7 @@ func runWrap(cmd *cobra.Command, args []string) error {
 	}
 	wrapInstanceName = flags.name
 	wrapTelegram = flags.telegram
+	wrapSlave = flags.slave
 
 	// Check if stdin is a terminal
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
@@ -346,6 +371,13 @@ func runWrap(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to open store: %w", err)
 	}
 	defer func() { _ = s.Close() }()
+
+	// When in slave mode, allow a curated set of tools for autonomous operation.
+	if wrapSlave {
+		for _, tool := range slaveAllowedTools() {
+			claudeArgs = append(claudeArgs, "--allowedTools", tool)
+		}
+	}
 
 	// Create the claude command with claude-specific arguments
 	c := exec.Command("claude", claudeArgs...)
