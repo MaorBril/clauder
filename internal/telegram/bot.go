@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -145,6 +146,37 @@ func (b *Bot) waitForPairing() error {
 	}
 }
 
+var ackMessages = []string{
+	"Right away, your majesty 🫡",
+	"Getting my ducks in a row… and they're drunk",
+	"On it like a bonnet, sir",
+	"Say less. Actually, you already said enough 😏",
+	"Your wish is my mass hallucination",
+	"Aye aye, captain tight pants",
+	"Hold my beer, I got this",
+	"Deploying the brain cells… all three of them",
+	"Already on it, you gorgeous disaster",
+	"Running faster than my last relationship fell apart 🏃",
+	"Consider it done. Well, consider it started.",
+	"Engaging turbo mode 🚀 (results may vary)",
+	"I was born for this. Literally. Like 2 seconds ago.",
+	"One sec, let me put on my thinking cap 🎩",
+	"Challenge accepted. Dignity optional.",
+	"Working on it harder than a Monday morning ☕",
+	"Brb, consulting my crystal ball 🔮",
+	"You rang? Actually don't answer that, I'm already moving",
+	"Firing up the neurons… both of them",
+	"On it faster than you can say 'are you done yet?'",
+}
+
+// sendAck sends a random acknowledgment reply to the user's message.
+func (b *Bot) sendAck(replyToMessageID int) {
+	text := ackMessages[rand.Intn(len(ackMessages))]
+	msg := tgbotapi.NewMessage(b.chatID, text)
+	msg.ReplyToMessageID = replyToMessageID
+	_, _ = b.api.Send(msg)
+}
+
 // receiveLoop polls Telegram for incoming messages and stores them as clauder messages.
 func (b *Bot) receiveLoop() {
 	defer b.wg.Done()
@@ -191,6 +223,7 @@ func (b *Bot) receiveLoop() {
 			if text == "" {
 				continue
 			}
+			b.sendAck(update.Message.MessageID)
 			if b.injector != nil {
 				// Inject directly into the PTY — no confirmation needed
 				b.injector(text)
