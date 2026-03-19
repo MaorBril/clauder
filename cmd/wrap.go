@@ -372,8 +372,8 @@ func runWrap(cmd *cobra.Command, args []string) error {
 	}
 	defer func() { _ = s.Close() }()
 
-	// When in slave mode, allow a curated set of tools for autonomous operation.
-	if wrapSlave {
+	// When in slave or telegram mode, allow a curated set of tools for autonomous operation.
+	if wrapSlave || wrapTelegram {
 		for _, tool := range slaveAllowedTools() {
 			claudeArgs = append(claudeArgs, "--allowedTools", tool)
 		}
