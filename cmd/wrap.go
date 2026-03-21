@@ -233,7 +233,13 @@ func (w *messageWatcher) checkAndInject() {
 		return
 	}
 
-	// In telegram mode, also notify the user via Telegram about unread messages
+	// Check if we can safely inject
+	if !w.tracker.CanInject(w.idleTime) {
+		return
+	}
+
+	// In telegram mode, notify the user via Telegram about unread messages
+	// (only when we're actually about to inject, to avoid spamming)
 	if w.tgBot != nil {
 		var notice string
 		if len(unreadFor) == 1 {
@@ -242,11 +248,6 @@ func (w *messageWatcher) checkAndInject() {
 			notice = fmt.Sprintf("📬 Incoming messages for %d instances — checking now.", len(unreadFor))
 		}
 		w.tgBot.SendText(notice)
-	}
-
-	// Check if we can safely inject
-	if !w.tracker.CanInject(w.idleTime) {
-		return
 	}
 
 	// Build contextual prompt
