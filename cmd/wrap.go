@@ -147,6 +147,7 @@ type messageWatcher struct {
 	cooldown     time.Duration
 	lastInjected time.Time
 	injectMu     sync.Mutex // serializes PTY injections to prevent interleaving
+	tgBot        *telegram.Bot // when set, notify user via Telegram about unread messages
 }
 
 func newMessageWatcher(s store.Store, workDir, directoryID, instanceName string, ptmx *os.File, tracker *inputTracker) *messageWatcher {
@@ -162,6 +163,14 @@ func newMessageWatcher(s store.Store, workDir, directoryID, instanceName string,
 		idleTime:     2 * time.Second,
 		cooldown:     60 * time.Second, // Don't re-inject for at least 60 seconds
 	}
+}
+
+// SetTelegramBot enables Telegram notifications for unread messages.
+// When set, the watcher sends a Telegram alert when messages arrive
+// and uses a shorter cooldown between checks.
+func (w *messageWatcher) SetTelegramBot(bot *telegram.Bot) {
+	w.tgBot = bot
+	w.cooldown = 15 * time.Second // faster checks in telegram mode
 }
 
 // Start begins monitoring for messages in a goroutine
@@ -224,6 +233,17 @@ func (w *messageWatcher) checkAndInject() {
 		return
 	}
 
+	// In telegram mode, also notify the user via Telegram about unread messages
+	if w.tgBot != nil {
+		var notice string
+		if len(unreadFor) == 1 {
+			notice = fmt.Sprintf("📬 Incoming message for '%s' — checking now.", unreadFor[0])
+		} else {
+			notice = fmt.Sprintf("📬 Incoming messages for %d instances — checking now.", len(unreadFor))
+		}
+		w.tgBot.SendText(notice)
+	}
+
 	// Check if we can safely inject
 	if !w.tracker.CanInject(w.idleTime) {
 		return
@@ -238,6 +258,10 @@ func (w *messageWatcher) checkAndInject() {
 		prompt = fmt.Sprintf("[New message for '%s'] - Read your clauder messages using get_messages.", unreadFor[0])
 	} else {
 		prompt = fmt.Sprintf("[Messages for %d instances] - Read your clauder messages using get_messages.", len(unreadFor))
+	}
+
+	if w.tgBot != nil {
+		prompt += "\nForward the message contents to the user via Telegram using send_message with to=\"telegram\"."
 	}
 
 	w.inject(prompt)
@@ -452,6 +476,8 @@ func runWrap(cmd *cobra.Command, args []string) error {
 			prompt := fmt.Sprintf("[Telegram] %s\nReply to the user via Telegram using send_message with to=\"telegram\".", text)
 			watcher.inject(prompt)
 		})
+		// Enable Telegram notifications for incoming instance messages
+		watcher.SetTelegramBot(tgBot)
 		if err := tgBot.Start(); err != nil {
 			return fmt.Errorf("telegram: %w", err)
 		}

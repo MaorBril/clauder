@@ -237,6 +237,16 @@ func (b *Bot) receiveLoop() {
 	}
 }
 
+// SendText sends a text message directly to the paired Telegram chat.
+// Safe to call from any goroutine.
+func (b *Bot) SendText(text string) {
+	if b.chatID == 0 {
+		return
+	}
+	msg := tgbotapi.NewMessage(b.chatID, text)
+	_, _ = b.api.Send(msg)
+}
+
 // Notify signals the outbound loop to check for messages immediately.
 // Non-blocking — safe to call from any goroutine.
 func (b *Bot) Notify() {
