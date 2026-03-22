@@ -4,9 +4,11 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"os/signal"
+	"sort"
 	"sync"
 	"syscall"
 	"time"
@@ -148,6 +150,20 @@ type messageWatcher struct {
 	lastInjected time.Time
 	injectMu     sync.Mutex // serializes PTY injections to prevent interleaving
 	tgBot        *telegram.Bot // when set, notify user via Telegram about unread messages
+
+	// Pending injection queue: when CanInject=false, we queue the notification
+	// and retry on subsequent ticks until the PTY is idle.
+	pendingPrompt string   // the prompt to inject once idle
+	pendingNames  []string // instance names with unread messages (for dedup)
+	pendingTgSent bool     // whether we already sent the Telegram notification for this pending batch
+
+	// In-flight guard: after injecting, we wait for Claude to process the
+	// message (mark it read) before checking again. This prevents the watcher
+	// from spinning on CanInject=false while Claude is busy responding to
+	// the injection we just sent.
+	inFlight      bool      // true after injection, cleared when unread count drops to 0
+	inFlightSince time.Time // when the injection was sent (safety timeout)
+	inFlightMax   time.Duration // max time to wait before giving up on in-flight guard
 }
 
 func newMessageWatcher(s store.Store, workDir, directoryID, instanceName string, ptmx *os.File, tracker *inputTracker) *messageWatcher {
@@ -162,6 +178,7 @@ func newMessageWatcher(s store.Store, workDir, directoryID, instanceName string,
 		checkEvery:   5 * time.Second,
 		idleTime:     2 * time.Second,
 		cooldown:     60 * time.Second, // Don't re-inject for at least 60 seconds
+		inFlightMax:  2 * time.Minute,  // safety timeout for in-flight guard
 	}
 }
 
@@ -170,7 +187,7 @@ func newMessageWatcher(s store.Store, workDir, directoryID, instanceName string,
 // and uses a shorter cooldown between checks.
 func (w *messageWatcher) SetTelegramBot(bot *telegram.Bot) {
 	w.tgBot = bot
-	w.cooldown = 15 * time.Second // faster checks in telegram mode
+	w.cooldown = 5 * time.Second // faster checks in telegram mode
 }
 
 // Start begins monitoring for messages in a goroutine
@@ -197,15 +214,30 @@ func (w *messageWatcher) run() {
 	}
 }
 
+// sameNames returns true if two sorted string slices contain the same elements.
+func sameNames(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func (w *messageWatcher) checkAndInject() {
 	// Check cooldown - don't spam injections
-	if time.Since(w.lastInjected) < w.cooldown {
+	sinceLastInject := time.Since(w.lastInjected)
+	if sinceLastInject < w.cooldown && w.pendingPrompt == "" && !w.inFlight {
 		return
 	}
 
 	// Query instances in our directory using directoryID
 	instances, err := w.store.GetInstancesByDirectory(w.directoryID)
 	if err != nil {
+		log.Printf("[watcher] GetInstancesByDirectory error: %v", err)
 		return
 	}
 
@@ -230,43 +262,85 @@ func (w *messageWatcher) checkAndInject() {
 	}
 
 	if len(unreadFor) == 0 {
+		// No more unread messages — clear any pending injection and in-flight guard
+		w.pendingPrompt = ""
+		w.pendingNames = nil
+		w.pendingTgSent = false
+		w.inFlight = false
 		return
 	}
 
-	// Check if we can safely inject
-	if !w.tracker.CanInject(w.idleTime) {
-		return
-	}
-
-	// In telegram mode, notify the user via Telegram about unread messages
-	// (only when we're actually about to inject, to avoid spamming)
-	if w.tgBot != nil {
-		var notice string
-		if len(unreadFor) == 1 {
-			notice = fmt.Sprintf("📬 Incoming message for '%s' — checking now.", unreadFor[0])
+	// In-flight guard: after injecting, wait for Claude to process the message
+	// (mark it read) before trying to inject again. We still check unread count
+	// above so the guard clears once messages are read.
+	if w.inFlight {
+		if time.Since(w.inFlightSince) > w.inFlightMax {
+			log.Printf("[watcher] in-flight guard timed out after %v, resuming", w.inFlightMax)
+			w.inFlight = false
 		} else {
-			notice = fmt.Sprintf("📬 Incoming messages for %d instances — checking now.", len(unreadFor))
+			return
 		}
-		w.tgBot.SendText(notice)
 	}
 
-	// Build contextual prompt
-	var prompt string
-	if w.instanceName != "" {
-		// Named instance - simple prompt
-		prompt = "[You have a new message] - Read your clauder messages using get_messages and respond to them."
-	} else if len(unreadFor) == 1 {
-		prompt = fmt.Sprintf("[New message for '%s'] - Read your clauder messages using get_messages.", unreadFor[0])
+	// Sort for consistent dedup comparison
+	sort.Strings(unreadFor)
+
+	// Rebuild prompt only if the unread set changed (dedup)
+	if w.pendingPrompt == "" || !sameNames(w.pendingNames, unreadFor) {
+		// Build contextual prompt
+		var prompt string
+		if w.instanceName != "" {
+			prompt = "[You have a new message] - Read your clauder messages using get_messages and respond to them."
+		} else if len(unreadFor) == 1 {
+			prompt = fmt.Sprintf("[New message for '%s'] - Read your clauder messages using get_messages.", unreadFor[0])
+		} else {
+			prompt = fmt.Sprintf("[Messages for %d instances] - Read your clauder messages using get_messages.", len(unreadFor))
+		}
+
+		if w.tgBot != nil {
+			prompt += "\nForward the message contents to the user via Telegram using send_message with to=\"telegram\"."
+		}
+
+		w.pendingPrompt = prompt
+		w.pendingNames = unreadFor
+
+		// Send Telegram notification when we first detect unread messages
+		if w.tgBot != nil && !w.pendingTgSent {
+			w.sendTgNotice(unreadFor)
+			w.pendingTgSent = true
+		}
+	}
+
+	// Try to inject
+	if w.tracker.CanInject(w.idleTime) {
+		log.Printf("[watcher] injecting for %v", w.pendingNames)
+		if w.tgBot != nil && !w.pendingTgSent {
+			w.sendTgNotice(unreadFor)
+		}
+		w.inject(w.pendingPrompt)
+		w.lastInjected = time.Now()
+		w.inFlight = true
+		w.inFlightSince = time.Now()
+		w.pendingPrompt = ""
+		w.pendingNames = nil
+		w.pendingTgSent = false
+		return
+	}
+
+	// Can't inject now — will retry on next tick
+	if w.pendingPrompt != "" {
+		log.Printf("[watcher] %d unread but CanInject=false, will retry", len(unreadFor))
+	}
+}
+
+func (w *messageWatcher) sendTgNotice(unreadFor []string) {
+	var notice string
+	if len(unreadFor) == 1 {
+		notice = fmt.Sprintf("📬 Incoming message for '%s' — checking now.", unreadFor[0])
 	} else {
-		prompt = fmt.Sprintf("[Messages for %d instances] - Read your clauder messages using get_messages.", len(unreadFor))
+		notice = fmt.Sprintf("📬 Incoming messages for %d instances — checking now.", len(unreadFor))
 	}
-
-	if w.tgBot != nil {
-		prompt += "\nForward the message contents to the user via Telegram using send_message with to=\"telegram\"."
-	}
-
-	w.inject(prompt)
-	w.lastInjected = time.Now()
+	w.tgBot.SendText(notice)
 }
 
 func (w *messageWatcher) inject(text string) {
