@@ -42,7 +42,7 @@ func runPetLine(cmd *cobra.Command, args []string) error {
 	offset, direction = advancePetLinePos(offset, direction, pet)
 	savePetLinePos(s, workDir, offset, direction)
 
-	fmt.Print(strings.Repeat(" ", offset) + renderPetLine(pet))
+	fmt.Print(renderPetLine(pet, offset))
 	return nil
 }
 
@@ -81,7 +81,7 @@ func advancePetLinePos(offset, direction int, pet *store.PetState) (int, int) {
 		step = 2
 	}
 
-	const maxOffset = 16
+	const maxOffset = 9 // 0..9 within the 10-wide track
 	offset += direction * step
 	if offset >= maxOffset {
 		offset = maxOffset
@@ -94,7 +94,7 @@ func advancePetLinePos(offset, direction int, pet *store.PetState) (int, int) {
 	return offset, direction
 }
 
-func renderPetLine(pet *store.PetState) string {
+func renderPetLine(pet *store.PetState, offset int) string {
 	if !pet.IsAlive {
 		return fmt.Sprintf("\033[90m💀 %s R.I.P. | %s tok\033[0m\n", pet.Name, fmtTokens(pet.TotalTokens))
 	}
@@ -103,14 +103,23 @@ func renderPetLine(pet *store.PetState) string {
 	hunger := miniBar(pet.Hunger, 5)
 	mood := miniBar(pet.Happiness, 5)
 	moodIcon := petMoodIcon(pet.Hunger, pet.Happiness, pet.Energy)
+	track := petTrack(emoji, offset)
 
-	return fmt.Sprintf("\033[35m%s %s\033[0m \033[90m[%s]\033[0m Food:%s Mood:%s %s \033[90m%s tok\033[0m\n",
-		emoji, pet.Name,
+	return fmt.Sprintf("\033[35m%s\033[0m \033[90m%s\033[0m \033[90m[%s]\033[0m Food:%s Mood:%s %s \033[90m%s tok\033[0m\n",
+		track, pet.Name,
 		pet.Species,
 		hunger, mood,
 		moodIcon,
 		fmtTokens(pet.TotalTokens),
 	)
+}
+
+// petTrack renders the pet moving inside a fixed-width arena, e.g. [🐣       ]
+func petTrack(emoji string, offset int) string {
+	const trackWidth = 10 // inner spaces
+	before := strings.Repeat(" ", offset)
+	after := strings.Repeat(" ", trackWidth-offset)
+	return "[" + before + emoji + after + "]"
 }
 
 func petEmoji(species string) string {
