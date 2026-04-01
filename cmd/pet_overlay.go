@@ -127,20 +127,23 @@ func (p *petOverlay) updateAnimation() {
 
 	p.frame++
 
-	// Move when pet is bored (low happiness)
-	if p.lastMood < 40 {
-		step := 2
-		if p.lastMood < 20 {
-			step = 3 // more frantic when really unhappy
-		}
-		p.petOffset += p.direction * step
-		maxOffset := max(p.termWidth-20, 10)
-		if p.petOffset >= maxOffset {
-			p.direction = -1
-		}
-		if p.petOffset <= 2 {
-			p.direction = 1
-		}
+	// Always move; step size scales with unhappiness
+	step := 1
+	switch {
+	case p.lastMood < 20:
+		step = 4
+	case p.lastMood < 40:
+		step = 3
+	case p.lastMood < 60:
+		step = 2
+	}
+	p.petOffset += p.direction * step
+	maxOffset := max(p.termWidth-20, 10)
+	if p.petOffset >= maxOffset {
+		p.direction = -1
+	}
+	if p.petOffset <= 2 {
+		p.direction = 1
 	}
 }
 

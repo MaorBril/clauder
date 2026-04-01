@@ -1567,17 +1567,17 @@ func petSpecies(totalTokens int64) string {
 func (s *SQLiteStore) applyPetDecay(pet *PetState) {
 	now := time.Now()
 
-	// Hunger decays: lose 1 point per 10 minutes since last fed
+	// Hunger decays: lose 1 point per 5 minutes since last fed
 	minutesSinceFed := now.Sub(pet.LastFedAt).Minutes()
-	hungerLoss := int(minutesSinceFed / 10)
+	hungerLoss := int(minutesSinceFed / 5)
 	pet.Hunger -= hungerLoss
 	if pet.Hunger < 0 {
 		pet.Hunger = 0
 	}
 
-	// Happiness decays: lose 1 point per 15 minutes since last play
+	// Happiness decays: lose 1 point per 5 minutes since last play
 	minutesSincePlay := now.Sub(pet.LastPlayAt).Minutes()
-	happinessLoss := int(minutesSincePlay / 15)
+	happinessLoss := int(minutesSincePlay / 5)
 	pet.Happiness -= happinessLoss
 	if pet.Happiness < 0 {
 		pet.Happiness = 0
