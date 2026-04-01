@@ -494,14 +494,24 @@ func runWrap(cmd *cobra.Command, args []string) error {
 	}
 	defer func() { _ = ptmx.Close() }()
 
+	// Start pet overlay (persistent tamagotchi below status line)
+	overlay := newPetOverlay(s, workDir)
+	overlay.Start()
+	defer overlay.Stop()
+
 	// Handle terminal resize (SIGWINCH)
 	resizeCh := make(chan os.Signal, 1)
 	signal.Notify(resizeCh, syscall.SIGWINCH)
 	go func() {
 		for range resizeCh {
-			if err := pty.InheritSize(os.Stdin, ptmx); err != nil {
-				fmt.Fprintf(os.Stderr, "error resizing pty: %s\n", err)
+			// Resize PTY but reserve bottom lines for pet overlay
+			if ws, err := pty.GetsizeFull(os.Stdin); err == nil {
+				if ws.Rows > uint16(petOverlayLines) {
+					ws.Rows -= uint16(petOverlayLines)
+				}
+				_ = pty.Setsize(ptmx, ws)
 			}
+			overlay.HandleResize()
 		}
 	}()
 	// Initial resize
