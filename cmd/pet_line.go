@@ -39,8 +39,11 @@ func runPetLine(cmd *cobra.Command, args []string) error {
 	}
 
 	offset, direction := loadPetLinePos(s, workDir)
-	offset, direction = advancePetLinePos(offset, direction, pet)
-	savePetLinePos(s, workDir, offset, direction)
+	newOffset, newDir := advancePetLinePos(offset, direction, pet)
+	if newOffset != offset || newDir != direction {
+		savePetLinePos(s, workDir, newOffset, newDir)
+	}
+	offset = newOffset
 
 	fmt.Print(renderPetLine(pet, offset))
 	return nil
@@ -161,8 +164,3 @@ func petMoodIcon(hunger, happiness, energy int) string {
 	}
 }
 
-func miniBar(value, width int) string {
-	filled := value * width / 100
-	empty := width - filled
-	return strings.Repeat("#", filled) + strings.Repeat("-", empty)
-}

@@ -79,6 +79,12 @@ func statBar(value int, width int) string {
 	return "[" + strings.Repeat("#", filled) + strings.Repeat("-", empty) + "]"
 }
 
+func miniBar(value, width int) string {
+	filled := value * width / 100
+	empty := width - filled
+	return strings.Repeat("#", filled) + strings.Repeat("-", empty)
+}
+
 func fmtTokens(t int64) string {
 	if t >= 1000000 {
 		return fmt.Sprintf("%.1fM", float64(t)/1000000)

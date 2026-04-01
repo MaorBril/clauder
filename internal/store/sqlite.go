@@ -1569,19 +1569,11 @@ func (s *SQLiteStore) applyPetDecay(pet *PetState) {
 
 	// Hunger decays: lose 1 point per 5 minutes since last fed
 	minutesSinceFed := now.Sub(pet.LastFedAt).Minutes()
-	hungerLoss := int(minutesSinceFed / 5)
-	pet.Hunger -= hungerLoss
-	if pet.Hunger < 0 {
-		pet.Hunger = 0
-	}
+	pet.Hunger = max(pet.Hunger-int(minutesSinceFed/5), 0)
 
 	// Happiness decays: lose 1 point per 5 minutes since last play
 	minutesSincePlay := now.Sub(pet.LastPlayAt).Minutes()
-	happinessLoss := int(minutesSincePlay / 5)
-	pet.Happiness -= happinessLoss
-	if pet.Happiness < 0 {
-		pet.Happiness = 0
-	}
+	pet.Happiness = max(pet.Happiness-int(minutesSincePlay/5), 0)
 
 	// Energy is derived: average of hunger and happiness
 	pet.Energy = (pet.Hunger + pet.Happiness) / 2
