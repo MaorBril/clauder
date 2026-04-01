@@ -52,7 +52,7 @@ func runPet(cmd *cobra.Command, args []string) error {
 func renderPetCLI(pet *store.PetState) string {
 	var sb strings.Builder
 
-	art := petArtCLI(pet)
+	art := store.PetArt(pet.Species, pet.IsAlive)
 	sb.WriteString(art)
 	sb.WriteString("\n")
 
@@ -98,75 +98,3 @@ func petAge(d time.Duration) string {
 	return fmt.Sprintf("%dh %dm", hours, int(d.Minutes())%60)
 }
 
-func petArtCLI(pet *store.PetState) string {
-	if !pet.IsAlive {
-		return `
-       _____
-      /     \
-     | x   x |
-     |  ___  |
-     | /   \ |
-      \_____/
-    R.I.P.`
-	}
-
-	switch pet.Species {
-	case "egg":
-		return `
-      ___
-     /   \
-    | o o |
-    |  ~  |
-     \___/`
-	case "baby":
-		return `
-     /\_/\
-    ( o.o )
-     > ^ <
-    /|   |\`
-	case "child":
-		return `
-     /\_/\
-    ( ^.^ )
-   />   <\
-   /|   |\ \
-    |   |
-    (_ _)`
-	case "teen":
-		return `
-      /\_/\
-     ( o.o )
-    _/> . <\_
-   / /|   |\ \
-    / |   | \
-   (_/|   |\_)
-      (   )
-      |_ _|`
-	case "adult":
-		return `
-       /\_____/\
-      /  o   o  \
-     ( ==  ^  == )
-      )         (
-     (           )
-    ( (  )   (  ) )
-   (__(__)___(__)__)`
-	case "elder":
-		return `
-    .  *  . *  .  *
-       /\_____/\
-      /  *   *  \
-     ( ==  ^  == )
-      )  ~~~~~  (
-     (  *     *  )
-    ( (  )   (  ) )
-   (__(__)___(__)__)
-    *  .  *  .  *`
-	default:
-		return `
-      ___
-     /   \
-    | ? ? |
-     \___/`
-	}
-}

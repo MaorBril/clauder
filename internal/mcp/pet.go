@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -8,70 +9,6 @@ import (
 	"github.com/maorbril/clauder/internal/store"
 	"github.com/maorbril/clauder/internal/telemetry"
 )
-
-// ASCII art for each life stage
-var petArt = map[string]string{
-	"egg": `
-      ___
-     /   \
-    | o o |
-    |  ~  |
-     \___/
-    `,
-	"baby": `
-     /\_/\
-    ( o.o )
-     > ^ <
-    /|   |\
-    `,
-	"child": `
-     /\_/\
-    ( ^.^ )
-   />   <\
-   /|   |\ \
-    |   |
-    (_ _)
-    `,
-	"teen": `
-      /\_/\
-     ( o.o )
-    _/> . <\_
-   / /|   |\ \
-    / |   | \
-   (_/|   |\_)
-      (   )
-      |_ _|
-    `,
-	"adult": `
-       /\_____/\
-      /  o   o  \
-     ( ==  ^  == )
-      )         (
-     (           )
-    ( (  )   (  ) )
-   (__(__)___(__)__)
-    `,
-	"elder": `
-    .  *  . *  .  *
-       /\_____/\
-      /  *   *  \
-     ( ==  ^  == )
-      )  ~~~~~  (
-     (  *     *  )
-    ( (  )   (  ) )
-   (__(__)___(__)__)
-    *  .  *  .  *
-    `,
-	"dead": `
-       _____
-      /     \
-     | x   x |
-     |  ___  |
-     | /   \ |
-      \_____/
-    R.I.P.
-    `,
-}
 
 func renderStatBar(label string, value int, width int) string {
 	filled := value * width / 100
@@ -83,12 +20,7 @@ func renderStatBar(label string, value int, width int) string {
 func renderPet(pet *store.PetState) string {
 	var sb strings.Builder
 
-	art := petArt["egg"]
-	if !pet.IsAlive {
-		art = petArt["dead"]
-	} else if a, ok := petArt[pet.Species]; ok {
-		art = a
-	}
+	art := store.PetArt(pet.Species, pet.IsAlive)
 
 	// Header
 	sb.WriteString(fmt.Sprintf("╔══════════════════════════════════╗\n"))
@@ -323,10 +255,13 @@ func (s *Server) toolPetRevive(args map[string]interface{}) ToolResult {
 	return textResult(fmt.Sprintf("A miracle! %s has been reborn!\n\n%s", pet.Name, renderPet(pet)))
 }
 
-// feedPetFromToolCall is called internally after each tool call to feed the pet
-func (s *Server) feedPetFromToolCall(result ToolResult) {
-	// Estimate tokens from the result size (rough: 1 token ~ 4 chars)
-	totalChars := 0
+// feedPetFromToolCall is called internally after each tool call to feed the pet.
+// Token count is estimated from combined input+output size (1 token ≈ 4 chars),
+// since the MCP protocol does not expose actual token counts.
+func (s *Server) feedPetFromToolCall(inputArgs map[string]interface{}, result ToolResult) {
+	// Encode args to JSON so we can measure their character length
+	encoded, _ := json.Marshal(inputArgs)
+	totalChars := len(encoded)
 	for _, block := range result.Content {
 		totalChars += len(block.Text)
 	}

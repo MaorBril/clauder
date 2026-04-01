@@ -416,8 +416,6 @@ func (s *Server) handleToolsList(req *Request) {
 				},
 			},
 		},
-	}
-
 		// Tamagotchi Pet tools
 		{
 			Name:        "pet_status",
@@ -539,7 +537,7 @@ func (s *Server) handleToolCall(req *Request) {
 
 	// Auto-feed the pet on non-pet tool calls
 	if !strings.HasPrefix(params.Name, "pet_") {
-		s.feedPetFromToolCall(result)
+		s.feedPetFromToolCall(params.Arguments, result)
 	}
 
 	// Log tool call summary to stderr for observability

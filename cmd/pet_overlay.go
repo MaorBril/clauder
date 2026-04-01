@@ -290,11 +290,5 @@ func overlayCenter(s string, width int) string {
 }
 
 func overlayFmtTokens(t int64) string {
-	if t >= 1000000 {
-		return fmt.Sprintf("%.1fM tok", float64(t)/1000000)
-	}
-	if t >= 1000 {
-		return fmt.Sprintf("%.1fK tok", float64(t)/1000)
-	}
-	return fmt.Sprintf("%d tok", t)
+	return fmtTokens(t) + " tok"
 }

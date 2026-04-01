@@ -518,11 +518,12 @@ func runWrap(cmd *cobra.Command, args []string) error {
 	resizeCh <- syscall.SIGWINCH
 	defer signal.Stop(resizeCh)
 
-	// Handle interrupt/terminate signals - forward to subprocess
+	// Handle interrupt/terminate signals - clean up overlay then forward to subprocess
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		for sig := range sigCh {
+			overlay.Stop()
 			if c.Process != nil {
 				_ = c.Process.Signal(sig)
 			}

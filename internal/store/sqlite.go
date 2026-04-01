@@ -1635,7 +1635,14 @@ func (s *SQLiteStore) GetPet(workDir string) (*PetState, error) {
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	return pet, err
+	if err != nil {
+		return nil, err
+	}
+	// Persist death if decay triggered it so the DB stays consistent.
+	if !pet.IsAlive {
+		_ = s.savePet(pet)
+	}
+	return pet, nil
 }
 
 func (s *SQLiteStore) CreatePet(workDir string, name string) (*PetState, error) {

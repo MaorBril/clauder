@@ -90,6 +90,79 @@ type PetState struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// PetArt returns the ASCII art string for a pet given its species and alive state.
+func PetArt(species string, alive bool) string {
+	if !alive {
+		return `
+       _____
+      /     \
+     | x   x |
+     |  ___  |
+     | /   \ |
+      \_____/
+    R.I.P.`
+	}
+	switch species {
+	case "egg":
+		return `
+      ___
+     /   \
+    | o o |
+    |  ~  |
+     \___/`
+	case "baby":
+		return `
+     /\_/\
+    ( o.o )
+     > ^ <
+    /|   |\`
+	case "child":
+		return `
+     /\_/\
+    ( ^.^ )
+   />   <\
+   /|   |\ \
+    |   |
+    (_ _)`
+	case "teen":
+		return `
+      /\_/\
+     ( o.o )
+    _/> . <\_
+   / /|   |\ \
+    / |   | \
+   (_/|   |\_)
+      (   )
+      |_ _|`
+	case "adult":
+		return `
+       /\_____/\
+      /  o   o  \
+     ( ==  ^  == )
+      )         (
+     (           )
+    ( (  )   (  ) )
+   (__(__)___(__)__)`
+	case "elder":
+		return `
+    .  *  . *  .  *
+       /\_____/\
+      /  *   *  \
+     ( ==  ^  == )
+      )  ~~~~~  (
+     (  *     *  )
+    ( (  )   (  ) )
+   (__(__)___(__)__)
+    *  .  *  .  *`
+	default:
+		return `
+      ___
+     /   \
+    | ? ? |
+     \___/`
+	}
+}
+
 type ContextWindowItem struct {
 	Type    string `json:"type"`    // "fact", "message", "system"
 	ID      int64  `json:"id"`
