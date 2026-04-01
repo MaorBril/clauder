@@ -105,12 +105,18 @@ func renderPetLine(pet *store.PetState, offset int) string {
 	moodIcon := petMoodIcon(pet.Hunger, pet.Happiness, pet.Energy)
 	track := petTrack(emoji, offset)
 
-	return fmt.Sprintf("\033[35m%s\033[0m \033[90m%s\033[0m \033[90m[%s]\033[0m Food:%s Mood:%s %s \033[90m%s tok\033[0m\n",
+	hint := ""
+	if pet.Happiness < 40 {
+		hint = " \033[31m(pet play!)\033[0m"
+	}
+
+	return fmt.Sprintf("\033[35m%s\033[0m \033[90m%s\033[0m \033[90m[%s]\033[0m Food:%s Mood:%s %s\033[90m%s tok\033[0m%s\n",
 		track, pet.Name,
 		pet.Species,
 		hunger, mood,
 		moodIcon,
 		fmtTokens(pet.TotalTokens),
+		hint,
 	)
 }
 
