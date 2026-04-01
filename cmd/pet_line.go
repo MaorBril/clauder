@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/maorbril/clauder/internal/store"
@@ -37,8 +38,60 @@ func runPetLine(cmd *cobra.Command, args []string) error {
 		return nil // no pet yet, print nothing
 	}
 
-	fmt.Print(renderPetLine(pet))
+	offset, direction := loadPetLinePos(s, workDir)
+	offset, direction = advancePetLinePos(offset, direction, pet)
+	savePetLinePos(s, workDir, offset, direction)
+
+	fmt.Print(strings.Repeat(" ", offset) + renderPetLine(pet))
 	return nil
+}
+
+// loadPetLinePos reads the stored offset and direction from settings.
+func loadPetLinePos(s store.Store, workDir string) (offset, direction int) {
+	direction = 1
+	val, err := s.GetSetting("pet_line_pos:" + workDir)
+	if err != nil || val == "" {
+		return 0, 1
+	}
+	parts := strings.SplitN(val, ",", 2)
+	if len(parts) == 2 {
+		offset, _ = strconv.Atoi(parts[0])
+		direction, _ = strconv.Atoi(parts[1])
+	}
+	if direction == 0 {
+		direction = 1
+	}
+	return offset, direction
+}
+
+func savePetLinePos(s store.Store, workDir string, offset, direction int) {
+	_ = s.SetSetting("pet_line_pos:"+workDir, strconv.Itoa(offset)+","+strconv.Itoa(direction))
+}
+
+// advancePetLinePos moves the pet one step; step size grows as mood decays.
+func advancePetLinePos(offset, direction int, pet *store.PetState) (int, int) {
+	avg := (pet.Hunger + pet.Happiness + pet.Energy) / 3
+	step := 1
+	switch {
+	case avg < 20:
+		step = 4
+	case avg < 40:
+		step = 3
+	case avg < 60:
+		step = 2
+	}
+
+	const maxOffset = 16
+	offset += direction * step
+	if offset >= maxOffset {
+		offset = maxOffset
+		direction = -1
+	}
+	if offset <= 0 {
+		offset = 0
+		direction = 1
+	}
+	return offset, direction
 }
 
 func renderPetLine(pet *store.PetState) string {
@@ -49,7 +102,6 @@ func renderPetLine(pet *store.PetState) string {
 	emoji := petEmoji(pet.Species)
 	hunger := miniBar(pet.Hunger, 5)
 	mood := miniBar(pet.Happiness, 5)
-
 	moodIcon := petMoodIcon(pet.Hunger, pet.Happiness, pet.Energy)
 
 	return fmt.Sprintf("\033[35m%s %s\033[0m \033[90m[%s]\033[0m Food:%s Mood:%s %s \033[90m%s tok\033[0m\n",
