@@ -134,10 +134,7 @@ func (p *petOverlay) updateAnimation() {
 			step = 3 // more frantic when really unhappy
 		}
 		p.petOffset += p.direction * step
-		maxOffset := p.termWidth - 20
-		if maxOffset < 10 {
-			maxOffset = 10
-		}
+		maxOffset := max(p.termWidth-20, 10)
 		if p.petOffset >= maxOffset {
 			p.direction = -1
 		}
@@ -172,12 +169,14 @@ func (p *petOverlay) render() {
 	// Render in the reserved bottom area using ANSI escape codes
 	var sb strings.Builder
 	sb.WriteString("\033[s")                              // save cursor
+	sb.WriteString("\033[?7l")                            // disable auto-wrap to prevent scroll on last line
 	sb.WriteString(fmt.Sprintf("\033[%d;1H", h-1))        // goto line h-1
 	sb.WriteString("\033[K")                              // clear line
 	sb.WriteString(line1)
 	sb.WriteString(fmt.Sprintf("\033[%d;1H", h))           // goto line h
 	sb.WriteString("\033[K")                              // clear line
 	sb.WriteString(line2)
+	sb.WriteString("\033[?7h")                            // re-enable auto-wrap
 	sb.WriteString("\033[u")                              // restore cursor
 
 	os.Stdout.WriteString(sb.String())
@@ -269,14 +268,9 @@ func overlayMiniBar(value int) string {
 }
 
 func padSprite(sprite string, offset, width int) string {
-	if offset < 0 {
-		offset = 0
-	}
+	offset = max(offset, 0)
 	if offset+len(sprite) > width {
-		offset = width - len(sprite)
-		if offset < 0 {
-			offset = 0
-		}
+		offset = max(width-len(sprite), 0)
 	}
 	return strings.Repeat(" ", offset) + sprite
 }
