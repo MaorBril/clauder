@@ -499,8 +499,8 @@ func runWrap(cmd *cobra.Command, args []string) error {
 	signal.Notify(resizeCh, syscall.SIGWINCH)
 	go func() {
 		for range resizeCh {
-			if err := pty.InheritSize(os.Stdin, ptmx); err != nil {
-				fmt.Fprintf(os.Stderr, "error resizing pty: %s\n", err)
+			if ws, err := pty.GetsizeFull(os.Stdin); err == nil {
+				_ = pty.Setsize(ptmx, ws)
 			}
 		}
 	}()

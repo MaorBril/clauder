@@ -75,6 +75,94 @@ type AnalyticsData struct {
 	MessagesLastWeek int            `json:"messages_last_week"`
 }
 
+type PetState struct {
+	ID          string    `json:"id"`           // directory-scoped (workDir)
+	Name        string    `json:"name"`
+	Species     string    `json:"species"`      // egg, baby, child, teen, adult, elder
+	Hunger      int       `json:"hunger"`       // 0-100 (0=starving, 100=full)
+	Happiness   int       `json:"happiness"`    // 0-100
+	Energy      int       `json:"energy"`       // 0-100
+	TotalTokens int64     `json:"total_tokens"` // lifetime tokens consumed
+	IsAlive     bool      `json:"is_alive"`
+	BornAt      time.Time `json:"born_at"`
+	LastFedAt   time.Time `json:"last_fed_at"`
+	LastPlayAt  time.Time `json:"last_play_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// PetArt returns the ASCII art string for a pet given its species and alive state.
+func PetArt(species string, alive bool) string {
+	if !alive {
+		return `
+       _____
+      /     \
+     | x   x |
+     |  ___  |
+     | /   \ |
+      \_____/
+    R.I.P.`
+	}
+	switch species {
+	case "egg":
+		return `
+      ___
+     /   \
+    | o o |
+    |  ~  |
+     \___/`
+	case "baby":
+		return `
+     /\_/\
+    ( o.o )
+     > ^ <
+    /|   |\`
+	case "child":
+		return `
+     /\_/\
+    ( ^.^ )
+   />   <\
+   /|   |\ \
+    |   |
+    (_ _)`
+	case "teen":
+		return `
+      /\_/\
+     ( o.o )
+    _/> . <\_
+   / /|   |\ \
+    / |   | \
+   (_/|   |\_)
+      (   )
+      |_ _|`
+	case "adult":
+		return `
+       /\_____/\
+      /  o   o  \
+     ( ==  ^  == )
+      )         (
+     (           )
+    ( (  )   (  ) )
+   (__(__)___(__)__)`
+	case "elder":
+		return `
+    .  *  . *  .  *
+       /\_____/\
+      /  *   *  \
+     ( ==  ^  == )
+      )  ~~~~~  (
+     (  *     *  )
+    ( (  )   (  ) )
+   (__(__)___(__)__)
+    *  .  *  .  *`
+	default:
+		return `
+      ___
+     /   \
+    | ? ? |
+     \___/`
+	}
+}
+
 type ContextWindowItem struct {
 	Type    string `json:"type"`    // "fact", "message", "system"
 	ID      int64  `json:"id"`
@@ -144,6 +232,14 @@ type Store interface {
 	GetSetting(key string) (string, error)
 	SetSetting(key, value string) error
 	DeleteSetting(key string) error
+
+	// Pet (Tamagotchi)
+	GetPet(workDir string) (*PetState, error)
+	CreatePet(workDir string, name string) (*PetState, error)
+	FeedPet(workDir string, tokens int64) (*PetState, error)
+	PlayWithPet(workDir string) (*PetState, error)
+	RenamePet(workDir string, name string) (*PetState, error)
+	RevivePet(workDir string) (*PetState, error)
 
 	// Lifecycle
 	Close() error
