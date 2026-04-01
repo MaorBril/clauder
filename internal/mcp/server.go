@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/maorbril/clauder/internal/store"
@@ -417,6 +418,65 @@ func (s *Server) handleToolsList(req *Request) {
 		},
 	}
 
+		// Tamagotchi Pet tools
+		{
+			Name:        "pet_status",
+			Description: "Check on your Tamagotchi pet! Your pet feeds on tokens you use in Claude Code. Every tool call feeds it. Watch it grow from an egg to an elder as you code! Call this to hatch your pet for the first time.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"name": {
+						Type:        "string",
+						Description: "Name your pet (only used when hatching a new pet, default: 'Clawde')",
+					},
+				},
+			},
+		},
+		{
+			Name:        "pet_feed",
+			Description: "Manually feed your pet some bonus tokens. Your pet is automatically fed when you use Claude Code tools, but you can give it a treat too!",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"tokens": {
+						Type:        "integer",
+						Description: "Number of bonus tokens to feed (default: 100)",
+					},
+				},
+			},
+		},
+		{
+			Name:        "pet_play",
+			Description: "Play with your Tamagotchi pet to boost its happiness! Costs a little hunger though.",
+			InputSchema: InputSchema{
+				Type:       "object",
+				Properties: map[string]Property{},
+			},
+		},
+		{
+			Name:        "pet_rename",
+			Description: "Give your Tamagotchi pet a new name.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"name": {
+						Type:        "string",
+						Description: "The new name for your pet (max 30 chars)",
+					},
+				},
+				Required: []string{"name"},
+			},
+		},
+		{
+			Name:        "pet_revive",
+			Description: "Revive your Tamagotchi pet if it has died from neglect. It comes back as a Jr. with reduced stats.",
+			InputSchema: InputSchema{
+				Type:       "object",
+				Properties: map[string]Property{},
+			},
+		},
+	}
+
 	s.sendResult(req.ID, map[string]interface{}{"tools": tools})
 }
 
@@ -460,11 +520,26 @@ func (s *Server) handleToolCall(req *Request) {
 		result = s.toolFactStats(params.Arguments)
 	case "purge_deleted":
 		result = s.toolPurgeDeleted(params.Arguments)
+	case "pet_status":
+		result = s.toolPetStatus(params.Arguments)
+	case "pet_feed":
+		result = s.toolPetFeed(params.Arguments)
+	case "pet_play":
+		result = s.toolPetPlay(params.Arguments)
+	case "pet_rename":
+		result = s.toolPetRename(params.Arguments)
+	case "pet_revive":
+		result = s.toolPetRevive(params.Arguments)
 	default:
 		result = ToolResult{
 			Content: []ContentBlock{{Type: "text", Text: "Unknown tool: " + params.Name}},
 			IsError: true,
 		}
+	}
+
+	// Auto-feed the pet on non-pet tool calls
+	if !strings.HasPrefix(params.Name, "pet_") {
+		s.feedPetFromToolCall(result)
 	}
 
 	// Log tool call summary to stderr for observability

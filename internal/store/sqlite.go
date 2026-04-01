@@ -328,6 +328,21 @@ func (s *SQLiteStore) migrate() error {
 	_, _ = s.db.Exec("UPDATE instances SET directory_id = id WHERE directory_id = ''")
 	_, _ = s.db.Exec("CREATE INDEX IF NOT EXISTS idx_instances_directory_id ON instances(directory_id)")
 
+	// Migration: Add pet table for Tamagotchi feature
+	_, _ = s.db.Exec(`CREATE TABLE IF NOT EXISTS pets (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL DEFAULT 'Clawde',
+		hunger INTEGER NOT NULL DEFAULT 50,
+		happiness INTEGER NOT NULL DEFAULT 50,
+		energy INTEGER NOT NULL DEFAULT 50,
+		total_tokens INTEGER NOT NULL DEFAULT 0,
+		is_alive INTEGER NOT NULL DEFAULT 1,
+		born_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		last_fed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		last_play_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`)
+
 	return nil
 }
 
@@ -1528,6 +1543,218 @@ func (s *SQLiteStore) SetSetting(key, value string) error {
 func (s *SQLiteStore) DeleteSetting(key string) error {
 	_, err := s.db.Exec("DELETE FROM settings WHERE key = ?", key)
 	return err
+}
+
+// Pet (Tamagotchi)
+
+func petSpecies(totalTokens int64) string {
+	switch {
+	case totalTokens < 1000:
+		return "egg"
+	case totalTokens < 10000:
+		return "baby"
+	case totalTokens < 100000:
+		return "child"
+	case totalTokens < 500000:
+		return "teen"
+	case totalTokens < 2000000:
+		return "adult"
+	default:
+		return "elder"
+	}
+}
+
+func (s *SQLiteStore) applyPetDecay(pet *PetState) {
+	now := time.Now()
+
+	// Hunger decays: lose 1 point per 10 minutes since last fed
+	minutesSinceFed := now.Sub(pet.LastFedAt).Minutes()
+	hungerLoss := int(minutesSinceFed / 10)
+	pet.Hunger -= hungerLoss
+	if pet.Hunger < 0 {
+		pet.Hunger = 0
+	}
+
+	// Happiness decays: lose 1 point per 15 minutes since last play
+	minutesSincePlay := now.Sub(pet.LastPlayAt).Minutes()
+	happinessLoss := int(minutesSincePlay / 15)
+	pet.Happiness -= happinessLoss
+	if pet.Happiness < 0 {
+		pet.Happiness = 0
+	}
+
+	// Energy is derived: average of hunger and happiness
+	pet.Energy = (pet.Hunger + pet.Happiness) / 2
+
+	// Pet dies if hunger and happiness are both 0 for too long
+	if pet.Hunger == 0 && pet.Happiness == 0 && minutesSinceFed > 1440 {
+		pet.IsAlive = false
+	}
+
+	pet.Species = petSpecies(pet.TotalTokens)
+}
+
+func (s *SQLiteStore) scanPet(row interface{ Scan(...interface{}) error }) (*PetState, error) {
+	var pet PetState
+	var isAlive int
+	err := row.Scan(
+		&pet.ID, &pet.Name, &pet.Hunger, &pet.Happiness,
+		&pet.Energy, &pet.TotalTokens, &isAlive,
+		&pet.BornAt, &pet.LastFedAt, &pet.LastPlayAt, &pet.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	pet.IsAlive = isAlive == 1
+	s.applyPetDecay(&pet)
+	return &pet, nil
+}
+
+func (s *SQLiteStore) savePet(pet *PetState) error {
+	isAlive := 0
+	if pet.IsAlive {
+		isAlive = 1
+	}
+	_, err := s.db.Exec(`
+		UPDATE pets SET name=?, hunger=?, happiness=?, energy=?, total_tokens=?,
+		is_alive=?, last_fed_at=?, last_play_at=?, updated_at=?
+		WHERE id=?`,
+		pet.Name, pet.Hunger, pet.Happiness, pet.Energy, pet.TotalTokens,
+		isAlive, pet.LastFedAt, pet.LastPlayAt, time.Now(), pet.ID,
+	)
+	return err
+}
+
+func (s *SQLiteStore) GetPet(workDir string) (*PetState, error) {
+	row := s.db.QueryRow(`
+		SELECT id, name, hunger, happiness, energy, total_tokens, is_alive,
+		born_at, last_fed_at, last_play_at, updated_at
+		FROM pets WHERE id = ?`, workDir)
+
+	pet, err := s.scanPet(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return pet, err
+}
+
+func (s *SQLiteStore) CreatePet(workDir string, name string) (*PetState, error) {
+	now := time.Now()
+	_, err := s.db.Exec(`
+		INSERT INTO pets (id, name, hunger, happiness, energy, total_tokens, is_alive,
+		born_at, last_fed_at, last_play_at, updated_at)
+		VALUES (?, ?, 50, 50, 50, 0, 1, ?, ?, ?, ?)`,
+		workDir, name, now, now, now, now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return s.GetPet(workDir)
+}
+
+func (s *SQLiteStore) FeedPet(workDir string, tokens int64) (*PetState, error) {
+	pet, err := s.GetPet(workDir)
+	if err != nil {
+		return nil, err
+	}
+	if pet == nil {
+		// Auto-create pet on first token usage
+		pet, err = s.CreatePet(workDir, "Clawde")
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if !pet.IsAlive {
+		return pet, nil
+	}
+
+	// Feed the pet: tokens restore hunger
+	pet.TotalTokens += tokens
+	hungerGain := int(tokens / 50) // 50 tokens = 1 hunger point
+	if hungerGain < 1 {
+		hungerGain = 1
+	}
+	pet.Hunger += hungerGain
+	if pet.Hunger > 100 {
+		pet.Hunger = 100
+	}
+
+	// Feeding also gives a small happiness boost
+	pet.Happiness += hungerGain / 3
+	if pet.Happiness > 100 {
+		pet.Happiness = 100
+	}
+
+	pet.LastFedAt = time.Now()
+	pet.Energy = (pet.Hunger + pet.Happiness) / 2
+	pet.Species = petSpecies(pet.TotalTokens)
+
+	if err := s.savePet(pet); err != nil {
+		return nil, err
+	}
+	return pet, nil
+}
+
+func (s *SQLiteStore) PlayWithPet(workDir string) (*PetState, error) {
+	pet, err := s.GetPet(workDir)
+	if err != nil {
+		return nil, err
+	}
+	if pet == nil {
+		return nil, fmt.Errorf("no pet found - use pet_status to hatch one first")
+	}
+	if !pet.IsAlive {
+		return pet, nil
+	}
+
+	// Playing boosts happiness significantly
+	pet.Happiness += 20
+	if pet.Happiness > 100 {
+		pet.Happiness = 100
+	}
+
+	// But costs a bit of hunger (playing is tiring)
+	pet.Hunger -= 5
+	if pet.Hunger < 0 {
+		pet.Hunger = 0
+	}
+
+	pet.LastPlayAt = time.Now()
+	pet.Energy = (pet.Hunger + pet.Happiness) / 2
+
+	if err := s.savePet(pet); err != nil {
+		return nil, err
+	}
+	return pet, nil
+}
+
+func (s *SQLiteStore) RenamePet(workDir string, name string) (*PetState, error) {
+	pet, err := s.GetPet(workDir)
+	if err != nil {
+		return nil, err
+	}
+	if pet == nil {
+		return nil, fmt.Errorf("no pet found - use pet_status to hatch one first")
+	}
+
+	pet.Name = name
+	if err := s.savePet(pet); err != nil {
+		return nil, err
+	}
+	return pet, nil
+}
+
+func (s *SQLiteStore) RevivePet(workDir string) (*PetState, error) {
+	now := time.Now()
+	_, err := s.db.Exec(`
+		UPDATE pets SET is_alive=1, hunger=30, happiness=30, energy=30,
+		last_fed_at=?, last_play_at=?, updated_at=?
+		WHERE id=?`, now, now, now, workDir)
+	if err != nil {
+		return nil, err
+	}
+	return s.GetPet(workDir)
 }
 
 func (s *SQLiteStore) Close() error {

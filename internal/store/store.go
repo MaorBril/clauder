@@ -75,6 +75,21 @@ type AnalyticsData struct {
 	MessagesLastWeek int            `json:"messages_last_week"`
 }
 
+type PetState struct {
+	ID          string    `json:"id"`           // directory-scoped (workDir)
+	Name        string    `json:"name"`
+	Species     string    `json:"species"`      // egg, baby, child, teen, adult, elder
+	Hunger      int       `json:"hunger"`       // 0-100 (0=starving, 100=full)
+	Happiness   int       `json:"happiness"`    // 0-100
+	Energy      int       `json:"energy"`       // 0-100
+	TotalTokens int64     `json:"total_tokens"` // lifetime tokens consumed
+	IsAlive     bool      `json:"is_alive"`
+	BornAt      time.Time `json:"born_at"`
+	LastFedAt   time.Time `json:"last_fed_at"`
+	LastPlayAt  time.Time `json:"last_play_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 type ContextWindowItem struct {
 	Type    string `json:"type"`    // "fact", "message", "system"
 	ID      int64  `json:"id"`
@@ -144,6 +159,14 @@ type Store interface {
 	GetSetting(key string) (string, error)
 	SetSetting(key, value string) error
 	DeleteSetting(key string) error
+
+	// Pet (Tamagotchi)
+	GetPet(workDir string) (*PetState, error)
+	CreatePet(workDir string, name string) (*PetState, error)
+	FeedPet(workDir string, tokens int64) (*PetState, error)
+	PlayWithPet(workDir string) (*PetState, error)
+	RenamePet(workDir string, name string) (*PetState, error)
+	RevivePet(workDir string) (*PetState, error)
 
 	// Lifecycle
 	Close() error
