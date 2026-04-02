@@ -73,7 +73,7 @@ func runPetAnim(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-const animHeight = 3 // lines reserved for animation
+const animHeight = 4 // lines reserved for animation (top border, title, content, bottom border)
 
 // buildAnimFrames returns 4 frames of a ball-chase animation.
 func buildAnimFrames(emoji, name string, termWidth int) [][]string {
@@ -139,7 +139,7 @@ func clearAnimFrame(tty *os.File, termHeight int) {
 	var sb strings.Builder
 	sb.WriteString("\033[s")
 	for i := range animHeight {
-		row := termHeight - animHeight + i + 1
+		row := termHeight - animHeight + i
 		sb.WriteString(fmt.Sprintf("\033[%d;1H\033[K", row))
 	}
 	sb.WriteString("\033[u")
