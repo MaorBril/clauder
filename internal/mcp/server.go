@@ -15,7 +15,7 @@ import (
 const (
 	ProtocolVersion = "2024-11-05"
 	ServerName      = "clauder"
-	ServerVersion   = "0.11.5" // Keep in sync with cmd.Version
+	ServerVersion   = "0.12.1" // Keep in sync with cmd.Version
 )
 
 type Server struct {
