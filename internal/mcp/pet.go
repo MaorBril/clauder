@@ -3,6 +3,7 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -199,6 +200,9 @@ func (s *Server) toolPetPlay(args map[string]interface{}) ToolResult {
 
 	// Use seconds as pseudo-random
 	activity := activities[time.Now().Second()%len(activities)]
+
+	// Spawn play animation in user's terminal (fire-and-forget)
+	go exec.Command("clauder", "pet-anim").Run()
 
 	return textResult(fmt.Sprintf("You %s %s!\n\n%s", activity, pet.Name, renderPet(pet)))
 }

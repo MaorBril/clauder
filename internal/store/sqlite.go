@@ -1728,6 +1728,18 @@ func (s *SQLiteStore) PlayWithPet(workDir string) (*PetState, error) {
 	return pet, nil
 }
 
+// ActivityBoost gives a small happiness boost for coding activities (Edit, Write, Bash, etc.)
+// without resetting LastPlayAt, so natural decay still applies.
+func (s *SQLiteStore) ActivityBoost(workDir string, amount int) error {
+	pet, err := s.GetPet(workDir)
+	if err != nil || pet == nil || !pet.IsAlive {
+		return nil
+	}
+	pet.Happiness = min(pet.Happiness+amount, 100)
+	pet.Energy = (pet.Hunger + pet.Happiness) / 2
+	return s.savePet(pet)
+}
+
 func (s *SQLiteStore) RenamePet(workDir string, name string) (*PetState, error) {
 	pet, err := s.GetPet(workDir)
 	if err != nil {

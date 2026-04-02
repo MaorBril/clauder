@@ -238,6 +238,7 @@ type Store interface {
 	CreatePet(workDir string, name string) (*PetState, error)
 	FeedPet(workDir string, tokens int64) (*PetState, error)
 	PlayWithPet(workDir string) (*PetState, error)
+	ActivityBoost(workDir string, amount int) error
 	RenamePet(workDir string, name string) (*PetState, error)
 	RevivePet(workDir string) (*PetState, error)
 

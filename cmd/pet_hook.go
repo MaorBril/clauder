@@ -23,7 +23,17 @@ func init() {
 }
 
 type hookInput struct {
-	Cwd string `json:"cwd"`
+	Cwd      string `json:"cwd"`
+	ToolName string `json:"tool_name"`
+}
+
+// toolMoodBoost maps tool names to happiness boosts from creative activity.
+var toolMoodBoost = map[string]int{
+	"Edit":         2,
+	"Write":        2,
+	"MultiEdit":    2,
+	"NotebookEdit": 1,
+	"Bash":         1,
 }
 
 func runPetHook(cmd *cobra.Command, args []string) error {
@@ -47,5 +57,10 @@ func runPetHook(cmd *cobra.Command, args []string) error {
 
 	// Feed the pet — silently ignore if no pet exists yet
 	_, _ = s.FeedPet(input.Cwd, tokensPerToolCall)
+
+	// Boost mood for creative activities
+	if boost, ok := toolMoodBoost[input.ToolName]; ok {
+		_ = s.ActivityBoost(input.Cwd, boost)
+	}
 	return nil
 }
