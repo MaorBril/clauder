@@ -15,7 +15,7 @@ import (
 const (
 	ProtocolVersion = "2024-11-05"
 	ServerName      = "clauder"
-	ServerVersion   = "0.12.1" // Keep in sync with cmd.Version
+	ServerVersion   = "0.12.2" // Keep in sync with cmd.Version
 )
 
 type Server struct {
@@ -155,8 +155,10 @@ func (s *Server) handleRequest(req *Request) {
 	switch req.Method {
 	case "initialize":
 		s.handleInitialize(req)
+	case "notifications/initialized":
+		// Notifications do not expect responses.
 	case "initialized":
-		// No response needed
+		// Notifications do not expect responses.
 	case "tools/list":
 		s.handleToolsList(req)
 	case "tools/call":
@@ -168,6 +170,10 @@ func (s *Server) handleRequest(req *Request) {
 	case "ping":
 		s.sendResult(req.ID, map[string]interface{}{})
 	default:
+		if req.ID == nil {
+			// Unknown notifications must not get error responses.
+			return
+		}
 		s.sendError(req.ID, -32601, "Method not found", nil)
 	}
 }
