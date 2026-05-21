@@ -55,6 +55,17 @@ func TestParseSections_basic(t *testing.T) {
 	}
 }
 
+func TestParseSections_ignoresFencedCode(t *testing.T) {
+	plan := "## Real One\n\nintro\n\n```go\n// phantom\n# not a heading\n## also not\n```\n\n## Real Two\nafter\n"
+	sections := ParseSections(plan)
+	if len(sections) != 2 {
+		t.Fatalf("expected 2 real sections, got %d", len(sections))
+	}
+	if sections[0].ID != "real-one" || sections[1].ID != "real-two" {
+		t.Errorf("unexpected slugs: %v", []string{sections[0].ID, sections[1].ID})
+	}
+}
+
 func TestParseSections_duplicateSlugs(t *testing.T) {
 	plan := "## Setup\n\n## Setup\n\n## Setup\n"
 	sections := ParseSections(plan)
@@ -145,6 +156,40 @@ func TestReanchor_fuzzy(t *testing.T) {
 	}
 	if res[0].NewStatus != store.CommentStatusOpen {
 		t.Errorf("expected open, got %q", res[0].NewStatus)
+	}
+}
+
+func TestReanchor_fuzzy_utf8(t *testing.T) {
+	// Plan contains multi-byte runes (em-dash and emoji). Whitespace normalization
+	// must not split runes, and the returned offsets must land on byte boundaries
+	// inside newPlan that decode back to a valid UTF-8 substring.
+	oldPlan := "## Setup\nrun migrations — ✅ before launch.\n"
+	newPlan := "## Setup procedure\nyou should run migrations — ✅ before launch carefully.\n"
+
+	oldSections := ParseSections(oldPlan)
+	newSections := ParseSections(newPlan)
+
+	snippet := "run migrations — ✅"
+	start := strings.Index(oldPlan, snippet)
+	if start < 0 {
+		t.Fatalf("snippet not found in oldPlan")
+	}
+	c := store.ReviewComment{
+		ID:                "c1",
+		AnchorSectionID:   oldSections[0].ID,
+		AnchorStartOffset: start,
+		AnchorEndOffset:   start + len(snippet),
+		Status:            store.CommentStatusOpen,
+	}
+	res := Reanchor(oldPlan, []store.ReviewComment{c}, newPlan, newSections)
+	if res[0].MigrationStrategy != "fuzzy" {
+		t.Fatalf("expected fuzzy, got %q", res[0].MigrationStrategy)
+	}
+	// The mapped substring should decode back to the original snippet.
+	got := newPlan[res[0].NewStartOffset:res[0].NewEndOffset]
+	if got != snippet {
+		t.Errorf("expected newPlan[%d:%d] == %q, got %q",
+			res[0].NewStartOffset, res[0].NewEndOffset, snippet, got)
 	}
 }
 

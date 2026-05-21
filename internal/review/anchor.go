@@ -100,9 +100,12 @@ func snippetForComment(plan string, c store.ReviewComment) string {
 	return plan[c.AnchorStartOffset:c.AnchorEndOffset]
 }
 
-// findFuzzy looks for snippet inside hay. It first tries exact, then tries a
-// whitespace-normalized exact match by walking forward over the hay.
-// Returns the inclusive-exclusive offsets in hay.
+// findFuzzy looks for snippet inside hay. It first tries an exact byte match;
+// if that fails, it normalizes whitespace in both sides and matches again,
+// then maps the result back to byte offsets in hay.
+//
+// UTF-8 safe: iterates by rune so multi-byte runes are not split, and the
+// offset table records the *byte* position of each emitted rune's first byte.
 func findFuzzy(hay, snippet string) (int, int, bool) {
 	if snippet == "" {
 		return 0, 0, false
@@ -110,39 +113,48 @@ func findFuzzy(hay, snippet string) (int, int, bool) {
 	if idx := strings.Index(hay, snippet); idx >= 0 {
 		return idx, idx + len(snippet), true
 	}
-	// Normalize whitespace in snippet and scan over hay character-by-character.
 	target := strings.Join(strings.Fields(snippet), " ")
 	if target == "" {
 		return 0, 0, false
 	}
-	// Build a normalized view of hay and remember original offsets.
+
+	// Build a whitespace-collapsed copy of hay. For each byte emitted to the
+	// normalized form, byteOf[i] gives the corresponding byte offset in hay.
+	// We emit a rune's UTF-8 bytes contiguously, so a strings.Index hit on a
+	// rune boundary maps cleanly back to a hay byte boundary.
 	var norm strings.Builder
-	offsets := make([]int, 0, len(hay))
+	byteOf := make([]int, 0, len(hay))
 	prevSpace := true
-	for i := 0; i < len(hay); i++ {
-		ch := hay[i]
-		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+	for hayIdx, r := range hay {
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
 			if !prevSpace {
 				norm.WriteByte(' ')
-				offsets = append(offsets, i)
+				byteOf = append(byteOf, hayIdx)
 				prevSpace = true
 			}
 			continue
 		}
-		norm.WriteByte(ch)
-		offsets = append(offsets, i)
+		runeStart := hayIdx
+		// Track per-byte offsets for this rune so end-of-match can be located.
+		nBefore := norm.Len()
+		norm.WriteRune(r)
+		nAfter := norm.Len()
+		for k := 0; k < nAfter-nBefore; k++ {
+			byteOf = append(byteOf, runeStart+k)
+		}
 		prevSpace = false
 	}
+
 	normStr := norm.String()
 	idx := strings.Index(normStr, target)
 	if idx < 0 {
 		return 0, 0, false
 	}
-	startOriginal := offsets[idx]
-	endIdx := idx + len(target) - 1
-	if endIdx >= len(offsets) {
+	startOriginal := byteOf[idx]
+	endByte := idx + len(target) - 1
+	if endByte >= len(byteOf) {
 		return 0, 0, false
 	}
-	endOriginal := offsets[endIdx] + 1
+	endOriginal := byteOf[endByte] + 1
 	return startOriginal, endOriginal, true
 }

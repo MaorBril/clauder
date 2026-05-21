@@ -11,11 +11,14 @@ import (
 
 const maxPlanSize = 256 << 10 // 256KB
 
-// reviewManager constructs a Manager bound to this server's store on demand.
-// Manager state (subscribers) is per-process, but we don't currently rely on
-// in-process subscribers from MCP — events are persisted and the HTTP server
-// owns the SSE fan-out.
+// reviewManager returns the process-wide Manager wired in by SetReviewManager
+// (cmd/serve.go), so MCP-side state changes share the same SSE fan-out as the
+// HTTP server. If unset (e.g. tests), falls back to a fresh Manager so calls
+// still succeed; SSE just won't fire for those callers.
 func (s *Server) reviewManager() *review.Manager {
+	if s.reviewMgr != nil {
+		return s.reviewMgr
+	}
 	return review.NewManager(s.store)
 }
 

@@ -396,7 +396,10 @@ func (m *Manager) Cancel(sessionID string) error {
 }
 
 // Subscribe returns a channel that receives every event for the session.
-// The caller must call the returned cancel function to clean up.
+// The caller must call the returned cancel function to remove the subscriber.
+// The channel is never closed: emit drops to slow consumers via select-default,
+// and once a subscriber is removed no goroutine will ever send to it again, so
+// it becomes garbage. Closing here would race with emit's outside-lock send.
 func (m *Manager) Subscribe(sessionID string) (<-chan store.ReviewEvent, func()) {
 	ch := make(chan store.ReviewEvent, 16)
 	m.mu.Lock()
@@ -410,7 +413,6 @@ func (m *Manager) Subscribe(sessionID string) (<-chan store.ReviewEvent, func())
 		for i, c := range list {
 			if c == ch {
 				m.streams[sessionID] = append(list[:i], list[i+1:]...)
-				close(ch)
 				return
 			}
 		}
@@ -419,6 +421,8 @@ func (m *Manager) Subscribe(sessionID string) (<-chan store.ReviewEvent, func())
 }
 
 // emit persists the event, sets its ID, and fans it out to live subscribers.
+// Sends are non-blocking; a slow consumer just misses the event and is
+// expected to resync via GET /state or by replaying ListReviewEvents.
 func (m *Manager) emit(sessionID string, e store.ReviewEvent) {
 	id, err := m.store.AddReviewEvent(e)
 	if err == nil {
@@ -435,7 +439,6 @@ func (m *Manager) emit(sessionID string, e store.ReviewEvent) {
 		select {
 		case ch <- e:
 		default:
-			// Slow consumer: drop. SPA will fall back to GET /state.
 		}
 	}
 }

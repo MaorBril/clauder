@@ -184,29 +184,41 @@
   }
 
   // ---- Selection-based commenting ---------------------------------------
+  //
+  // The agent's plan is byte-indexed on the server (Go uses byte offsets). The
+  // DOM gives us UTF-16 code units. We compute the prefix string up to the
+  // selection, then `TextEncoder().encode(...).length` to get the UTF-8 byte
+  // count, so anchors round-trip correctly for plans with emoji / non-ASCII.
+
+  const utf8 = new TextEncoder();
+
   function findOffsetsFromSelection() {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) return null;
     const range = sel.getRangeAt(0);
 
-    // Walk up from the start container looking for a parent with data-start.
     const startBlock = ancestorWith(range.startContainer, 'start');
     const endBlock = ancestorWith(range.endContainer, 'end');
     if (!startBlock || !endBlock) return null;
 
     const blockStart = parseInt(startBlock.dataset.start, 10);
-    const blockEnd = parseInt(endBlock.dataset.end, 10);
-    if (Number.isNaN(blockStart) || Number.isNaN(blockEnd)) return null;
+    if (Number.isNaN(blockStart)) return null;
 
-    // Use the rendered text of the block(s) to compute approximate offsets.
-    // We compute prefix length within each block and add to block start.
-    // This is best-effort; the server stores fingerprint for fuzzy rematch.
-    const startTextOffset = textOffsetWithin(startBlock, range.startContainer, range.startOffset);
-    const endTextOffset = textOffsetWithin(endBlock, range.endContainer, range.endOffset);
+    const startByteInBlock = byteOffsetWithin(startBlock, range.startContainer, range.startOffset);
+    let endAbs;
+    if (startBlock === endBlock) {
+      const endByteInBlock = byteOffsetWithin(endBlock, range.endContainer, range.endOffset);
+      endAbs = blockStart + endByteInBlock;
+    } else {
+      const endBlockStart = parseInt(endBlock.dataset.start, 10);
+      if (Number.isNaN(endBlockStart)) return null;
+      const endByteInBlock = byteOffsetWithin(endBlock, range.endContainer, range.endOffset);
+      endAbs = endBlockStart + endByteInBlock;
+    }
 
     return {
-      start: blockStart + startTextOffset,
-      end: (startBlock === endBlock ? blockStart : blockEnd) + endTextOffset,
+      start: blockStart + startByteInBlock,
+      end: endAbs,
       sectionId: nearestSectionID(startBlock),
       snippet: sel.toString(),
     };
@@ -221,16 +233,20 @@
     return null;
   }
 
-  function textOffsetWithin(block, node, offset) {
-    let total = 0;
+  // Walks the block's text nodes in order, accumulating the prefix text up to
+  // (node, offset). Returns the UTF-8 byte length of that prefix.
+  function byteOffsetWithin(block, node, offset) {
+    let prefix = '';
     const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
-      if (walker.currentNode === node) {
-        return total + offset;
+      const n = walker.currentNode;
+      if (n === node) {
+        prefix += n.nodeValue.slice(0, offset);
+        return utf8.encode(prefix).length;
       }
-      total += walker.currentNode.nodeValue.length;
+      prefix += n.nodeValue;
     }
-    return total;
+    return utf8.encode(prefix).length;
   }
 
   function nearestSectionID(block) {

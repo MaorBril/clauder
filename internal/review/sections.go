@@ -12,14 +12,49 @@ import (
 
 var headingRe = regexp.MustCompile(`(?m)^(#{1,6})\s+(.+?)\s*$`)
 
+// fencedCodeRe matches ```...``` fenced code blocks (any info string).
+// (?s) makes `.` match newlines so the body can span lines.
+var fencedCodeRe = regexp.MustCompile("(?s)```[^\n]*\n.*?\n```")
+
+// findFencedRanges returns inclusive-exclusive byte ranges that fall inside
+// fenced code blocks, so ParseSections can ignore headings that occur there.
+func findFencedRanges(plan string) [][2]int {
+	idxs := fencedCodeRe.FindAllStringIndex(plan, -1)
+	if len(idxs) == 0 {
+		return nil
+	}
+	out := make([][2]int, len(idxs))
+	for i, ij := range idxs {
+		out[i] = [2]int{ij[0], ij[1]}
+	}
+	return out
+}
+
+func insideRanges(offset int, ranges [][2]int) bool {
+	for _, r := range ranges {
+		if offset >= r[0] && offset < r[1] {
+			return true
+		}
+	}
+	return false
+}
+
 // ParseSections walks the markdown plan and returns one ReviewSection per ATX
 // heading, with byte offsets covering each section's span (heading line through
-// the line before the next equal-or-higher heading).
+// the line before the next equal-or-higher heading). Headings inside fenced
+// code blocks are ignored.
 //
 // IDs are stable slugs derived from heading text; ambiguous duplicate slugs
 // receive a numeric suffix so anchors can address them deterministically.
 func ParseSections(plan string) []store.ReviewSection {
-	matches := headingRe.FindAllStringSubmatchIndex(plan, -1)
+	fenced := findFencedRanges(plan)
+	allMatches := headingRe.FindAllStringSubmatchIndex(plan, -1)
+	matches := allMatches[:0]
+	for _, m := range allMatches {
+		if !insideRanges(m[0], fenced) {
+			matches = append(matches, m)
+		}
+	}
 	if len(matches) == 0 {
 		return nil
 	}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/maorbril/clauder/internal/review"
 	"github.com/maorbril/clauder/internal/store"
 )
 
@@ -26,6 +27,13 @@ type Server struct {
 	reader      *bufio.Reader
 	writer      io.Writer
 	mu          sync.Mutex
+	reviewMgr   *review.Manager // shared with HTTP server so SSE fans out MCP-side events
+}
+
+// SetReviewManager wires a process-wide review.Manager into the MCP server so
+// MCP-driven events (e.g. submit_plan_revision) reach connected SSE clients.
+func (s *Server) SetReviewManager(m *review.Manager) {
+	s.reviewMgr = m
 }
 
 type Request struct {
