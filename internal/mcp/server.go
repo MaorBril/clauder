@@ -525,6 +525,23 @@ func (s *Server) handleToolsList(req *Request) {
 			},
 		},
 		{
+			Name: "patch_plan",
+			Description: "Apply a small textual edit to the current plan revision. Provide a unique substring " +
+				"(old_str) from the current plan and its replacement (new_str). Far cheaper than re-emitting " +
+				"the entire plan via submit_plan_revision — prefer this for one-line tweaks, typo fixes, and " +
+				"single-section rewrites. Errors if old_str is not present or matches more than one place; in " +
+				"that case include more surrounding text to disambiguate.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"session_id": {Type: "string", Description: "Session ID from submit_plan_for_review."},
+					"old_str":    {Type: "string", Description: "Substring to replace. Must appear exactly once in the current plan."},
+					"new_str":    {Type: "string", Description: "Replacement text. May be empty to delete."},
+				},
+				Required: []string{"session_id", "old_str", "new_str"},
+			},
+		},
+		{
 			Name: "reply_to_comment",
 			Description: "Reply to a user comment thread inside a plan-review session, without changing the plan. " +
 				"Use this for clarifications. Use submit_plan_revision instead when the comment requires plan changes.",
@@ -626,6 +643,8 @@ func (s *Server) handleToolCall(req *Request) {
 		result = s.toolSubmitPlanForReview(params.Arguments)
 	case "submit_plan_revision":
 		result = s.toolSubmitPlanRevision(params.Arguments)
+	case "patch_plan":
+		result = s.toolPatchPlan(params.Arguments)
 	case "reply_to_comment":
 		result = s.toolReplyToComment(params.Arguments)
 	case "get_review_plan":

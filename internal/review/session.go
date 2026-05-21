@@ -133,6 +133,39 @@ func (m *Manager) GetState(sessionID string) (*State, error) {
 	}, nil
 }
 
+// PatchPlan is a small-edit alternative to SubmitRevision. The agent supplies
+// a unique substring (oldStr) from the current revision and its replacement;
+// the server splices and produces a new revision without the agent having to
+// re-emit the entire plan. Errors if oldStr is missing or non-unique.
+func (m *Manager) PatchPlan(sessionID, oldStr, newStr string) (*store.ReviewRevision, error) {
+	if oldStr == "" {
+		return nil, fmt.Errorf("old_str is required")
+	}
+	sess, err := m.store.GetReviewSession(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if sess == nil {
+		return nil, fmt.Errorf("session %s not found", sessionID)
+	}
+	rev, err := m.store.GetReviewRevision(sess.CurrentRevisionID)
+	if err != nil {
+		return nil, err
+	}
+	if rev == nil {
+		return nil, fmt.Errorf("current revision missing for %s", sessionID)
+	}
+	count := strings.Count(rev.PlanMarkdown, oldStr)
+	if count == 0 {
+		return nil, fmt.Errorf("old_str not found in current revision")
+	}
+	if count > 1 {
+		return nil, fmt.Errorf("old_str matches %d places; include more surrounding text to make it unique", count)
+	}
+	patched := strings.Replace(rev.PlanMarkdown, oldStr, newStr, 1)
+	return m.SubmitRevision(sessionID, patched)
+}
+
 // SubmitRevision is called by the agent after addressing feedback.
 // It re-anchors existing comments against the new plan and records an event.
 func (m *Manager) SubmitRevision(sessionID, planMarkdown string) (*store.ReviewRevision, error) {
@@ -468,9 +501,10 @@ func formatCommentNotice(sess *store.ReviewSession, c *store.ReviewComment, rev 
 	return fmt.Sprintf(
 		"[plan review %s] User %s on section %q: %q\n"+
 			"To reply in this thread, call clauder.reply_to_comment(session_id=%q, parent_comment_id=%q, body=...).\n"+
-			"If the feedback requires a plan change, call clauder.submit_plan_revision(session_id=%q, plan_markdown=...).\n"+
+			"For a SMALL textual edit (a few lines), prefer clauder.patch_plan(session_id=%q, old_str=..., new_str=...) — far cheaper than re-emitting the full plan.\n"+
+			"For a STRUCTURAL change, call clauder.submit_plan_revision(session_id=%q, plan_markdown=...).\n"+
 			"Do not start building yet — wait for the user to approve.",
-		sess.ID, verb, section, c.Body, sess.ID, c.ID, sess.ID,
+		sess.ID, verb, section, c.Body, sess.ID, c.ID, sess.ID, sess.ID,
 	)
 }
 

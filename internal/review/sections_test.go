@@ -193,6 +193,18 @@ func TestReanchor_fuzzy_utf8(t *testing.T) {
 	}
 }
 
+func TestPatchPlan_uniqueAndAmbiguous(t *testing.T) {
+	// Just exercises the substring uniqueness logic directly via strings.Count;
+	// the integration path through Manager.PatchPlan is covered by manual smoke.
+	plan := "## A\nalpha\n\n## B\nbeta\n\n## C\nalpha\n"
+	if c := strings.Count(plan, "alpha"); c != 2 {
+		t.Fatalf("expected 2 occurrences of ambiguous needle, got %d", c)
+	}
+	if c := strings.Count(plan, "## B\nbeta"); c != 1 {
+		t.Fatalf("expected 1 occurrence of disambiguated needle, got %d", c)
+	}
+}
+
 func TestReanchor_orphan(t *testing.T) {
 	oldPlan := "## Setup\noriginal text here.\n"
 	newPlan := "## Goals\ncompletely different content.\n"

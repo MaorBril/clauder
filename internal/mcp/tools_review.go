@@ -89,6 +89,35 @@ func (s *Server) toolSubmitPlanRevision(args map[string]interface{}) ToolResult 
 	))
 }
 
+func (s *Server) toolPatchPlan(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("patch_plan")
+
+	sessionID, _ := args["session_id"].(string)
+	oldStr, _ := args["old_str"].(string)
+	newStr, _ := args["new_str"].(string)
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return errorResult("session_id is required")
+	}
+	if oldStr == "" {
+		return errorResult("old_str is required (a unique substring of the current plan to replace)")
+	}
+	if len(oldStr) > maxPlanSize || len(newStr) > maxPlanSize {
+		return errorResult(fmt.Sprintf("old_str/new_str exceeds maximum size of %d bytes", maxPlanSize))
+	}
+
+	rm := s.reviewManager()
+	rev, err := rm.PatchPlan(sessionID, oldStr, newStr)
+	if err != nil {
+		return errorResult(err.Error())
+	}
+	url := rm.ReviewURL(sessionID)
+	return textResult(fmt.Sprintf(
+		"Patched current plan and created revision %d for session %s.\nReview at: %s\n\nWait for further feedback or approval before building.",
+		rev.RevisionNumber, sessionID, url,
+	))
+}
+
 func (s *Server) toolReplyToComment(args map[string]interface{}) ToolResult {
 	telemetry.TrackMCPTool("reply_to_comment")
 
