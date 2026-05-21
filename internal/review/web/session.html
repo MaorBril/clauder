@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plan Review · clauder</title>
+<link rel="stylesheet" href="/review/static/styles.css">
+</head>
+<body class="session">
+<header class="topbar">
+  <a href="/review/" class="back">&larr; All reviews</a>
+  <h1 id="title">Plan review</h1>
+  <div class="status-row">
+    <span id="status-pill" class="pill">…</span>
+    <span id="revision-meta" class="meta"></span>
+  </div>
+  <div class="actions">
+    <button id="btn-approve" class="primary">Approve plan</button>
+    <button id="btn-request">Request revisions…</button>
+    <button id="btn-cancel" class="danger">Cancel</button>
+  </div>
+</header>
+
+<main class="split">
+  <section class="doc-pane" id="doc-pane">
+    <article id="plan-doc" class="plan-doc"></article>
+  </section>
+  <aside class="comments-pane">
+    <h2>Discussion</h2>
+    <div id="comments" class="comments"></div>
+    <form id="general-comment-form" class="comment-form">
+      <textarea id="general-comment-body" placeholder="Add a general comment for the agent…" rows="3"></textarea>
+      <button type="submit">Send</button>
+    </form>
+  </aside>
+</main>
+
+<dialog id="anchor-dialog" class="anchor-dialog">
+  <form method="dialog">
+    <h3>Comment on selection</h3>
+    <blockquote id="anchor-snippet"></blockquote>
+    <textarea id="anchor-body" rows="3" placeholder="What about this part?"></textarea>
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button id="anchor-submit" value="confirm" class="primary">Comment</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="request-dialog" class="anchor-dialog">
+  <form method="dialog">
+    <h3>Request revisions</h3>
+    <p class="hint">Briefly describe what to change. The agent will revise the plan.</p>
+    <textarea id="request-body" rows="4" placeholder="e.g. Split out the migration plan into a separate section."></textarea>
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button id="request-submit" value="confirm" class="primary">Send</button>
+    </menu>
+  </form>
+</dialog>
+
+<script src="/review/static/session.js"></script>
+</body>
+</html>

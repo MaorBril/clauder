@@ -343,6 +343,59 @@ func (s *SQLiteStore) migrate() error {
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	)`)
 
+	// Migration: Plan review tables
+	_, _ = s.db.Exec(`CREATE TABLE IF NOT EXISTS review_sessions (
+		id TEXT PRIMARY KEY,
+		title TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'awaiting_review',
+		work_dir TEXT NOT NULL,
+		directory_id TEXT NOT NULL,
+		instance_id TEXT NOT NULL,
+		current_revision_id TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		approved_at DATETIME
+	)`)
+	_, _ = s.db.Exec("CREATE INDEX IF NOT EXISTS idx_review_sessions_instance ON review_sessions(instance_id)")
+	_, _ = s.db.Exec("CREATE INDEX IF NOT EXISTS idx_review_sessions_directory ON review_sessions(directory_id)")
+	_, _ = s.db.Exec("CREATE INDEX IF NOT EXISTS idx_review_sessions_status ON review_sessions(status)")
+
+	_, _ = s.db.Exec(`CREATE TABLE IF NOT EXISTS review_revisions (
+		id TEXT PRIMARY KEY,
+		session_id TEXT NOT NULL,
+		revision_number INTEGER NOT NULL,
+		plan_markdown TEXT NOT NULL,
+		sections_json TEXT NOT NULL DEFAULT '[]',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`)
+	_, _ = s.db.Exec("CREATE INDEX IF NOT EXISTS idx_review_revisions_session ON review_revisions(session_id)")
+
+	_, _ = s.db.Exec(`CREATE TABLE IF NOT EXISTS review_comments (
+		id TEXT PRIMARY KEY,
+		session_id TEXT NOT NULL,
+		revision_id_created TEXT NOT NULL,
+		parent_id TEXT NOT NULL DEFAULT '',
+		anchor_section_id TEXT NOT NULL DEFAULT '',
+		anchor_text_fingerprint TEXT NOT NULL DEFAULT '',
+		anchor_start_offset INTEGER NOT NULL DEFAULT 0,
+		anchor_end_offset INTEGER NOT NULL DEFAULT 0,
+		status TEXT NOT NULL DEFAULT 'open',
+		author TEXT NOT NULL,
+		body TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`)
+	_, _ = s.db.Exec("CREATE INDEX IF NOT EXISTS idx_review_comments_session ON review_comments(session_id)")
+	_, _ = s.db.Exec("CREATE INDEX IF NOT EXISTS idx_review_comments_parent ON review_comments(parent_id)")
+
+	_, _ = s.db.Exec(`CREATE TABLE IF NOT EXISTS review_events (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		payload_json TEXT NOT NULL DEFAULT '{}',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`)
+	_, _ = s.db.Exec("CREATE INDEX IF NOT EXISTS idx_review_events_session ON review_events(session_id, id)")
+
 	return nil
 }
 

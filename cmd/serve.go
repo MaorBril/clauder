@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/maorbril/clauder/internal/mcp"
+	"github.com/maorbril/clauder/internal/review"
 	"github.com/maorbril/clauder/internal/store"
 	"github.com/maorbril/clauder/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -126,8 +127,23 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
+	// One Manager owned by this process. The MCP server and the HTTP server
+	// share it so that SSE fans out events that originate on either side.
+	rm := review.NewManager(s)
+	rm.SetUIPort(8765)
+
+	// Best-effort: bind the dashboard port for the review UI. If another
+	// clauder serve / clauder ui already owns it, log and continue — the MCP
+	// tools still work, the URL just resolves against the other process.
+	go func() {
+		if err := rm.StartStandalone(":8765"); err != nil {
+			fmt.Fprintf(os.Stderr, "[clauder] plan-review HTTP not started: %v\n", err)
+		}
+	}()
+
 	// Run MCP server
 	server := mcp.NewServer(s, instanceID, directoryID, workDir)
+	server.SetReviewManager(rm)
 	if err := server.Run(); err != nil {
 		_ = s.UnregisterInstance(instanceID)
 		return err

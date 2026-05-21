@@ -49,6 +49,7 @@ func init() {
 	rootCmd.AddCommand(setupCmd)
 	rootCmd.AddCommand(uiCmd)
 	rootCmd.AddCommand(wrapCmd)
+	rootCmd.AddCommand(reviewCmd)
 }
 
 func getDataDir() string {

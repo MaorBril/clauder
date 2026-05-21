@@ -17,6 +17,7 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
+	"github.com/maorbril/clauder/internal/review"
 	"github.com/maorbril/clauder/internal/store"
 )
 
@@ -141,24 +142,29 @@ type DirStatsEntry struct {
 
 // Start starts the web server on the given port
 func (ws *WebServer) Start(port int) error {
-	http.HandleFunc("/", ws.handleDashboard)
-	http.HandleFunc("/api/data", ws.handleAPIData)
-	http.HandleFunc("/api/launch", ws.handleLaunch)
-	http.HandleFunc("/api/facts/delete", ws.handleDeleteFact)
-	http.HandleFunc("/api/facts/stats", ws.handleFactStats)
-	http.HandleFunc("/api/facts/create", ws.handleCreateFact)
-	http.HandleFunc("/api/facts/update", ws.handleUpdateFact)
-	http.HandleFunc("/api/facts/bulk-delete", ws.handleBulkDeleteFacts)
-	http.HandleFunc("/api/facts/purge", ws.handlePurgeDeleted)
-	http.HandleFunc("/api/terminal", ws.handleTerminal)
-	http.HandleFunc("/api/analytics", ws.handleAnalytics)
-	http.HandleFunc("/api/graph", ws.handleGraph)
-	http.HandleFunc("/api/facts/import", ws.handleImportFacts)
-	http.HandleFunc("/api/context-window", ws.handleContextWindow)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", ws.handleDashboard)
+	mux.HandleFunc("/api/data", ws.handleAPIData)
+	mux.HandleFunc("/api/launch", ws.handleLaunch)
+	mux.HandleFunc("/api/facts/delete", ws.handleDeleteFact)
+	mux.HandleFunc("/api/facts/stats", ws.handleFactStats)
+	mux.HandleFunc("/api/facts/create", ws.handleCreateFact)
+	mux.HandleFunc("/api/facts/update", ws.handleUpdateFact)
+	mux.HandleFunc("/api/facts/bulk-delete", ws.handleBulkDeleteFacts)
+	mux.HandleFunc("/api/facts/purge", ws.handlePurgeDeleted)
+	mux.HandleFunc("/api/terminal", ws.handleTerminal)
+	mux.HandleFunc("/api/analytics", ws.handleAnalytics)
+	mux.HandleFunc("/api/graph", ws.handleGraph)
+	mux.HandleFunc("/api/facts/import", ws.handleImportFacts)
+	mux.HandleFunc("/api/context-window", ws.handleContextWindow)
+
+	rm := review.NewManager(ws.store)
+	rm.SetUIPort(port)
+	rm.RegisterRoutes(mux)
 
 	addr := fmt.Sprintf(":%d", port)
 	log.Printf("Starting web dashboard at http://localhost%s", addr)
-	return http.ListenAndServe(addr, nil)
+	return http.ListenAndServe(addr, mux)
 }
 
 func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
