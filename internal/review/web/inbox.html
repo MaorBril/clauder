@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plan Review · clauder</title>
+<link rel="stylesheet" href="/review/static/styles.css">
+</head>
+<body class="inbox">
+<header class="topbar">
+  <h1>Plan reviews</h1>
+  <p class="hint">All plans your agents have submitted for review.</p>
+</header>
+
+<main>
+  <div class="filter-row">
+    <label><input type="checkbox" id="filter-open" checked> Awaiting review</label>
+    <label><input type="checkbox" id="filter-revising" checked> Revising</label>
+    <label><input type="checkbox" id="filter-approved"> Approved</label>
+    <label><input type="checkbox" id="filter-cancelled"> Cancelled</label>
+  </div>
+  <ul id="session-list" class="session-list"></ul>
+</main>
+
+<script src="/review/static/inbox.js"></script>
+</body>
+</html>

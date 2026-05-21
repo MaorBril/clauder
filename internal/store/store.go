@@ -242,6 +242,26 @@ type Store interface {
 	RenamePet(workDir string, name string) (*PetState, error)
 	RevivePet(workDir string) (*PetState, error)
 
+	// Plan review
+	CreateReviewSession(s ReviewSession) error
+	GetReviewSession(id string) (*ReviewSession, error)
+	UpdateReviewSessionStatus(id, status string) error
+	UpdateReviewCurrentRevision(id, revisionID string) error
+	ListReviewSessionsByStatus(statuses []string, limit int) ([]ReviewSession, error)
+	ListReviewSessionsByInstance(instanceID string, statuses []string) ([]ReviewSession, error)
+
+	AddReviewRevision(r ReviewRevision) error
+	GetReviewRevision(id string) (*ReviewRevision, error)
+	ListReviewRevisions(sessionID string) ([]ReviewRevision, error)
+
+	AddReviewComment(c ReviewComment) error
+	UpdateReviewCommentAnchor(id, sectionID, fingerprint string, startOffset, endOffset int, status string) error
+	ListReviewComments(sessionID string) ([]ReviewComment, error)
+	GetReviewComment(id string) (*ReviewComment, error)
+
+	AddReviewEvent(e ReviewEvent) (int64, error)
+	ListReviewEvents(sessionID string, afterID int64, limit int) ([]ReviewEvent, error)
+
 	// Lifecycle
 	Close() error
 }

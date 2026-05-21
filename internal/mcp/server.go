@@ -479,6 +479,86 @@ func (s *Server) handleToolsList(req *Request) {
 				Properties: map[string]Property{},
 			},
 		},
+		// Plan-review tools
+		{
+			Name: "submit_plan_for_review",
+			Description: "Submit a design/implementation plan for human review BEFORE writing any code. " +
+				"Use this whenever you have produced a multi-step plan that the user should approve. " +
+				"Returns a session_id and a URL where the user reviews the plan, adds inline comments, " +
+				"and approves. After calling this tool you MUST stop and wait — do not start building. " +
+				"The user's comments and approval arrive as clauder messages.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"plan_markdown": {
+						Type:        "string",
+						Description: "The plan, in markdown. Use clear ATX headings (## Section) so comments can anchor to sections.",
+					},
+					"title": {
+						Type:        "string",
+						Description: "Short title for the plan (defaults to first heading).",
+					},
+				},
+				Required: []string{"plan_markdown"},
+			},
+		},
+		{
+			Name: "submit_plan_revision",
+			Description: "Submit a revised version of the plan after the user requested changes. " +
+				"Existing comments are re-anchored automatically. After this call you must still wait " +
+				"for the user to approve before building.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"session_id":    {Type: "string", Description: "Session ID from submit_plan_for_review."},
+					"plan_markdown": {Type: "string", Description: "The full revised plan in markdown."},
+				},
+				Required: []string{"session_id", "plan_markdown"},
+			},
+		},
+		{
+			Name: "reply_to_comment",
+			Description: "Reply to a user comment thread inside a plan-review session, without changing the plan. " +
+				"Use this for clarifications. Use submit_plan_revision instead when the comment requires plan changes.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"session_id":        {Type: "string", Description: "Review session ID."},
+					"parent_comment_id": {Type: "string", Description: "ID of the comment you are replying to."},
+					"body":              {Type: "string", Description: "The reply text."},
+				},
+				Required: []string{"session_id", "parent_comment_id", "body"},
+			},
+		},
+		{
+			Name:        "get_review_plan",
+			Description: "Return the current plan, status, and a summary of open comments for a review session.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"session_id": {Type: "string", Description: "Review session ID."},
+				},
+				Required: []string{"session_id"},
+			},
+		},
+		{
+			Name:        "list_review_sessions",
+			Description: "List recent plan-review sessions. Use mine_only=true to filter to sessions started by this instance.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"statuses": {
+						Type:        "array",
+						Description: "Optional filter: awaiting_review|revising|approved|cancelled",
+						Items:       &Items{Type: "string"},
+					},
+					"mine_only": {
+						Type:        "boolean",
+						Description: "If true, only sessions owned by this instance.",
+					},
+				},
+			},
+		},
 	}
 
 	s.sendResult(req.ID, map[string]interface{}{"tools": tools})
@@ -534,6 +614,16 @@ func (s *Server) handleToolCall(req *Request) {
 		result = s.toolPetRename(params.Arguments)
 	case "pet_revive":
 		result = s.toolPetRevive(params.Arguments)
+	case "submit_plan_for_review":
+		result = s.toolSubmitPlanForReview(params.Arguments)
+	case "submit_plan_revision":
+		result = s.toolSubmitPlanRevision(params.Arguments)
+	case "reply_to_comment":
+		result = s.toolReplyToComment(params.Arguments)
+	case "get_review_plan":
+		result = s.toolGetReviewPlan(params.Arguments)
+	case "list_review_sessions":
+		result = s.toolListReviewSessions(params.Arguments)
 	default:
 		result = ToolResult{
 			Content: []ContentBlock{{Type: "text", Text: "Unknown tool: " + params.Name}},

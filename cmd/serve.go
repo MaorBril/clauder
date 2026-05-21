@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/maorbril/clauder/internal/mcp"
+	"github.com/maorbril/clauder/internal/review"
 	"github.com/maorbril/clauder/internal/store"
 	"github.com/maorbril/clauder/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -123,6 +124,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 			case <-ticker.C:
 				_ = s.Heartbeat(instanceID)
 			}
+		}
+	}()
+
+	// Best-effort: start the plan-review HTTP server on the dashboard port.
+	// Multiple clauder serve processes may try; only the first binds successfully.
+	// If `clauder ui` is already running it owns the port and we silently skip.
+	go func() {
+		rm := review.NewManager(s)
+		rm.SetUIPort(8765)
+		if err := rm.StartStandalone(":8765"); err != nil {
+			fmt.Fprintf(os.Stderr, "[clauder] plan-review HTTP not started: %v\n", err)
 		}
 	}()
 
