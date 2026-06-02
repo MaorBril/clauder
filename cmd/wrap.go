@@ -4,10 +4,12 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"sync"
 	"syscall"
@@ -148,21 +150,22 @@ type messageWatcher struct {
 	idleTime     time.Duration
 	cooldown     time.Duration
 	lastInjected time.Time
-	injectMu     sync.Mutex // serializes PTY injections to prevent interleaving
+	injectMu     sync.Mutex    // serializes PTY injections to prevent interleaving
 	tgBot        *telegram.Bot // when set, notify user via Telegram about unread messages
 
 	// Pending injection queue: when CanInject=false, we queue the notification
 	// and retry on subsequent ticks until the PTY is idle.
-	pendingPrompt string   // the prompt to inject once idle
-	pendingNames  []string // instance names with unread messages (for dedup)
-	pendingTgSent bool     // whether we already sent the Telegram notification for this pending batch
+	pendingPrompt    string   // the prompt to inject once idle
+	pendingNames     []string // instance names with unread messages (for dedup)
+	pendingTgSent    bool     // whether we already sent the Telegram notification for this pending batch
+	cantInjectLogged bool     // whether we already logged "CanInject=false" for this pending batch
 
 	// In-flight guard: after injecting, we wait for Claude to process the
 	// message (mark it read) before checking again. This prevents the watcher
 	// from spinning on CanInject=false while Claude is busy responding to
 	// the injection we just sent.
-	inFlight      bool      // true after injection, cleared when unread count drops to 0
-	inFlightSince time.Time // when the injection was sent (safety timeout)
+	inFlight      bool          // true after injection, cleared when unread count drops to 0
+	inFlightSince time.Time     // when the injection was sent (safety timeout)
 	inFlightMax   time.Duration // max time to wait before giving up on in-flight guard
 }
 
@@ -266,6 +269,7 @@ func (w *messageWatcher) checkAndInject() {
 		w.pendingPrompt = ""
 		w.pendingNames = nil
 		w.pendingTgSent = false
+		w.cantInjectLogged = false
 		w.inFlight = false
 		return
 	}
@@ -303,6 +307,7 @@ func (w *messageWatcher) checkAndInject() {
 
 		w.pendingPrompt = prompt
 		w.pendingNames = unreadFor
+		w.cantInjectLogged = false // new batch: allow one retry log again
 
 		// Send Telegram notification when we first detect unread messages
 		if w.tgBot != nil && !w.pendingTgSent {
@@ -324,12 +329,16 @@ func (w *messageWatcher) checkAndInject() {
 		w.pendingPrompt = ""
 		w.pendingNames = nil
 		w.pendingTgSent = false
+		w.cantInjectLogged = false
 		return
 	}
 
-	// Can't inject now — will retry on next tick
-	if w.pendingPrompt != "" {
+	// Can't inject now — will retry on next tick. Log only once per pending
+	// batch; otherwise this spins every tick while the user has typed-but-unsent
+	// input (a non-empty buffer keeps CanInject false indefinitely).
+	if w.pendingPrompt != "" && !w.cantInjectLogged {
 		log.Printf("[watcher] %d unread but CanInject=false, will retry", len(unreadFor))
+		w.cantInjectLogged = true
 	}
 }
 
@@ -465,6 +474,20 @@ func runWrap(cmd *cobra.Command, args []string) error {
 
 	// Open the store for message monitoring
 	dataDir := getDataDir()
+
+	// Redirect the standard logger to a file. In wrap mode stderr is the live
+	// terminal that Claude Code's TUI draws on, so any log.Printf (notably the
+	// message watcher's "CanInject=false, will retry" diagnostics) would
+	// scribble over the screen — the well-known "screen full of can't-inject
+	// errors" symptom. Send it to a log file, or discard it if that fails,
+	// rather than ever writing to the terminal.
+	if lf, err := os.OpenFile(filepath.Join(dataDir, "wrap.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
+		log.SetOutput(lf)
+		defer func() { _ = lf.Close() }()
+	} else {
+		log.SetOutput(io.Discard)
+	}
+
 	s, err := store.NewSQLiteStore(dataDir)
 	if err != nil {
 		return fmt.Errorf("failed to open store: %w", err)
