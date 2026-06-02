@@ -42,10 +42,19 @@ func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 
 	dbPath := filepath.Join(dataDir, "clauder.db")
 	debugLog("[NewSQLiteStore] Opening database: %s", dbPath)
-	db, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	// NOTE: modernc.org/sqlite uses the _pragma=name(value) DSN syntax, NOT the
+	// mattn/go-sqlite3 _journal_mode=/_busy_timeout= form (which it silently
+	// ignores, leaving journal_mode=delete and busy_timeout=0 -> immediate
+	// "database is locked" errors under concurrent access).
+	dsn := dbPath + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+	// SQLite allows only a single writer. WAL permits concurrent readers, but
+	// serializing connections eliminates the write-write contention that
+	// busy_timeout alone can deadlock on (two pooled conns upgrading read->write).
+	db.SetMaxOpenConns(1)
 	debugLog("[NewSQLiteStore] Database opened successfully")
 
 	store := &SQLiteStore{db: db, dataDir: dataDir}
