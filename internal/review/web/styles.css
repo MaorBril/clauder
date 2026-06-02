@@ -137,6 +137,28 @@ button.danger:hover { border-color: var(--danger); }
 }
 .plan-doc pre code { background: transparent; padding: 0; }
 .plan-doc ul, .plan-doc ol { padding-left: 1.4em; }
+.plan-doc li.task { list-style: none; margin-left: -1.2em; }
+.plan-doc li.task input { margin-right: 6px; vertical-align: middle; }
+.plan-doc hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.2em 0;
+}
+.plan-doc table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  display: block;
+  overflow-x: auto;
+  font-size: 13px;
+}
+.plan-doc th, .plan-doc td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.plan-doc th { background: var(--panel); font-weight: 600; }
+.plan-doc tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.03); }
 .plan-doc blockquote {
   margin: 0.6em 0;
   padding-left: 12px;

@@ -36,6 +36,25 @@
   // in the source markdown), which lets us derive anchor offsets from DOM
   // ranges.
 
+  // A markdown table separator row: cells of dashes with optional alignment
+  // colons, e.g. `| --- | :---: | ---: |`. At least one cell required.
+  function isTableSeparator(line) {
+    if (!line.includes('|') && !line.includes('-')) return false;
+    const cells = splitRow(line);
+    return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c.trim()));
+  }
+
+  // Splits a table row into trimmed cell strings, honoring escaped pipes (\|)
+  // and dropping the empty cells produced by leading/trailing pipes.
+  function splitRow(line) {
+    const cells = line
+      .split(/(?<!\\)\|/)            // split on unescaped pipes
+      .map((c) => c.replace(/\\\|/g, "|").trim());
+    if (cells.length && cells[0] === "") cells.shift();
+    if (cells.length && cells[cells.length - 1] === "") cells.pop();
+    return cells;
+  }
+
   function renderMarkdown(src) {
     const lines = src.split('\n');
     const tokens = [];
@@ -85,6 +104,35 @@
         i++;
         continue;
       }
+      // Horizontal rule (--- / *** / ___ on its own line). Table separators
+      // are consumed by the table branch below, so this is an unambiguous hr.
+      if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+        const [start, end] = advance(line);
+        tokens.push({ type: 'hr', start, end });
+        i++;
+        continue;
+      }
+      // Table (GitHub-flavored): a header row of `| a | b |` followed by a
+      // separator row like `| --- | :--: |`. We capture the whole table as one
+      // block (start/end span every consumed line) so selection anchoring maps
+      // back to a contiguous source range.
+      if (line.includes('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+        const startOff = byteOffset;
+        const header = splitRow(line);
+        advance(line);
+        i++;
+        advance(lines[i]); // separator row
+        i++;
+        const rows = [];
+        while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') {
+          rows.push(splitRow(lines[i]));
+          advance(lines[i]);
+          i++;
+        }
+        const endOff = byteOffset - 1;
+        tokens.push({ type: 'table', header, rows, start: startOff, end: endOff });
+        continue;
+      }
       // List item
       const li = line.match(/^(\s*)([-*]|\d+\.)\s+(.+)$/);
       if (li) {
@@ -127,14 +175,29 @@
     return renderTokens(tokens);
   }
 
+  // Only allow benign URL schemes so a malicious plan can't inject
+  // javascript:/data: links. Relative and anchor links are permitted.
+  function safeHref(url) {
+    const u = url.trim();
+    if (/^(https?:|mailto:|tel:)/i.test(u)) return u;
+    if (/^[/#?]/.test(u) || /^[\w./-]+$/.test(u)) return u;
+    return null;
+  }
+
   function renderInline(text) {
-    // Escape, then re-allow inline code and bold/italic.
+    // Escape, then re-allow inline code, links, and bold/italic/strike.
     const esc = text
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
     return esc
       .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) => {
+        const href = safeHref(url);
+        if (!href) return m; // leave unsafe/odd links as literal text
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+      })
+      .replace(/~~([^~]+)~~/g, '<del>$1</del>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/(^|\s)\*([^*\s][^*]*?)\*(?=\s|$|[.,;:!?])/g, '$1<em>$2</em>');
   }
@@ -162,17 +225,59 @@
           el = document.createElement('blockquote');
           el.innerHTML = renderInline(t.text);
           break;
+        case 'hr':
+          el = document.createElement('hr');
+          break;
         case 'ul':
         case 'ol':
           el = document.createElement(t.type);
           for (const item of t.items) {
             const li = document.createElement('li');
-            li.innerHTML = renderInline(item.text);
+            // Task list item: `[ ] text` / `[x] text` -> checkbox + label.
+            const task = item.text.match(/^\[([ xX])\]\s+(.*)$/);
+            if (task) {
+              li.classList.add('task');
+              const box = document.createElement('input');
+              box.type = 'checkbox';
+              box.disabled = true;
+              box.checked = task[1].toLowerCase() === 'x';
+              const span = document.createElement('span');
+              span.innerHTML = renderInline(task[2]);
+              li.appendChild(box);
+              li.appendChild(span);
+            } else {
+              li.innerHTML = renderInline(item.text);
+            }
             li.dataset.start = item.start;
             li.dataset.end = item.end;
             el.appendChild(li);
           }
           break;
+        case 'table': {
+          el = document.createElement('table');
+          const thead = document.createElement('thead');
+          const htr = document.createElement('tr');
+          for (const cell of t.header) {
+            const th = document.createElement('th');
+            th.innerHTML = renderInline(cell);
+            htr.appendChild(th);
+          }
+          thead.appendChild(htr);
+          el.appendChild(thead);
+          const tbody = document.createElement('tbody');
+          for (const row of t.rows) {
+            const tr = document.createElement('tr');
+            // Pad/truncate to the header's column count so ragged rows render.
+            for (let c = 0; c < t.header.length; c++) {
+              const td = document.createElement('td');
+              td.innerHTML = renderInline(row[c] || '');
+              tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+          }
+          el.appendChild(tbody);
+          break;
+        }
       }
       if (el) {
         if (t.start !== undefined) el.dataset.start = t.start;
