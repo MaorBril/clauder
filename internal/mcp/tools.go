@@ -15,6 +15,9 @@ const (
 	MaxMessageSize = 64 << 10 // 64KB
 	MaxTagLength   = 256
 	MaxTagCount    = 50
+
+	// MaxInstanceNameLength bounds names set via rename_instance.
+	MaxInstanceNameLength = 64
 )
 
 func (s *Server) toolRemember(args map[string]interface{}) ToolResult {
@@ -483,6 +486,43 @@ func (s *Server) toolGetMessages(args map[string]interface{}) ToolResult {
 	}
 
 	return textResult(sb.String())
+}
+
+func (s *Server) toolRenameInstance(args map[string]interface{}) ToolResult {
+	telemetry.TrackMCPTool("rename_instance")
+
+	name, ok := args["name"].(string)
+	if !ok {
+		return errorResult("'name' is required")
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errorResult("'name' must not be empty")
+	}
+	if strings.Contains(name, ":") {
+		return errorResult("'name' must not contain ':' (it is reserved for the instance ID separator)")
+	}
+	if len(name) > MaxInstanceNameLength {
+		return errorResult(fmt.Sprintf("'name' exceeds maximum length of %d characters", MaxInstanceNameLength))
+	}
+
+	oldID := s.instanceID
+	newID := s.directoryID + ":" + name
+	if newID == oldID {
+		return textResult(fmt.Sprintf("This instance is already named '%s'.", name))
+	}
+
+	if err := s.store.RenameInstance(oldID, newID, name); err != nil {
+		return errorResult(fmt.Sprintf("failed to rename instance: %v", err))
+	}
+
+	// Point the running server at the new ID so subsequent get_messages /
+	// send_message and the heartbeat loop all operate on the renamed instance.
+	s.setInstanceID(newID)
+
+	return textResult(fmt.Sprintf(
+		"Renamed this instance to '%s'. Other sessions can now reach it as '%s' (or broadcast to directory '%s').",
+		name, newID, s.directoryID))
 }
 
 func (s *Server) toolCompactContext(args map[string]interface{}) ToolResult {

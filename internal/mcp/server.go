@@ -21,6 +21,7 @@ const (
 
 type Server struct {
 	store       store.Store
+	idMu        sync.RWMutex // guards instanceID, which can change via rename_instance
 	instanceID  string
 	directoryID string
 	workDir     string
@@ -28,6 +29,21 @@ type Server struct {
 	writer      io.Writer
 	mu          sync.Mutex
 	reviewMgr   *review.Manager // shared with HTTP server so SSE fans out MCP-side events
+}
+
+// InstanceID returns the server's current instance ID. It is safe to call from
+// other goroutines (e.g. the heartbeat loop) while rename_instance may be
+// updating it concurrently.
+func (s *Server) InstanceID() string {
+	s.idMu.RLock()
+	defer s.idMu.RUnlock()
+	return s.instanceID
+}
+
+func (s *Server) setInstanceID(id string) {
+	s.idMu.Lock()
+	defer s.idMu.Unlock()
+	s.instanceID = id
 }
 
 // SetReviewManager wires a process-wide review.Manager into the MCP server so
@@ -325,6 +341,20 @@ func (s *Server) handleToolsList(req *Request) {
 			},
 		},
 		{
+			Name:        "rename_instance",
+			Description: "Set or change the name of THIS running session, without restarting it. The name is how other instances discover and message this session (its ID becomes 'directoryID:name'). Use this when a session was started without a name (or with the wrong one) and you now want it to be addressable — e.g. before coordinating with another Claude Code session in the same directory.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"name": {
+						Type:        "string",
+						Description: "The new name for this instance (e.g. 'frontend', 'backend'). Must not be empty or contain ':'.",
+					},
+				},
+				Required: []string{"name"},
+			},
+		},
+		{
 			Name:        "compact_context",
 			Description: "Get all stored facts with full metadata, formatted for context compaction. Returns every fact with its ID, content, tags, age, and size so you can analyze which facts to keep, delete, or merge. Use this when asked to \"organize your sock drawer\", \"compact context\", or clean up stale memories. Set global=true to review facts across ALL directories.",
 			InputSchema: InputSchema{
@@ -615,6 +645,8 @@ func (s *Server) handleToolCall(req *Request) {
 		result = s.toolSendMessage(params.Arguments)
 	case "get_messages":
 		result = s.toolGetMessages(params.Arguments)
+	case "rename_instance":
+		result = s.toolRenameInstance(params.Arguments)
 	case "compact_context":
 		result = s.toolCompactContext(params.Arguments)
 	case "bulk_forget":

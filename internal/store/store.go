@@ -204,6 +204,7 @@ type Store interface {
 	RegisterInstance(id, directoryID, name, directory, tty string, pid int) error
 	Heartbeat(id string) error
 	UnregisterInstance(id string) error
+	RenameInstance(oldID, newID, newName string) error
 	GetInstances() ([]Instance, error)
 	GetInstance(id string) (*Instance, error)
 	GetInstancesByDirectory(directoryID string) ([]Instance, error)

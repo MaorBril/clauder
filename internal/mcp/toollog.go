@@ -86,6 +86,9 @@ func extractResultSummary(toolName string, args map[string]interface{}, result T
 		return summarizeOptimizeContext(text)
 	case "list_instances":
 		return summarizeListInstances(text)
+	case "rename_instance":
+		name, _ := args["name"].(string)
+		return fmt.Sprintf(`{"name":%s}`, jsonString(name))
 	default:
 		return jsonObj("result_length", len(text))
 	}

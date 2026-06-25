@@ -1144,6 +1144,58 @@ func (s *SQLiteStore) UnregisterInstance(id string) error {
 	return err
 }
 
+// RenameInstance changes a running instance's name in place. Because the name is
+// encoded into the instance ID ("directoryID:name"), this rewrites the primary
+// key and migrates every row that references the old ID (messages in both
+// directions and review sessions) atomically. It returns an error if the source
+// instance no longer exists or if the target name is already taken by a
+// different instance in the same directory.
+func (s *SQLiteStore) RenameInstance(oldID, newID, newName string) error {
+	if oldID == newID {
+		// Same ID (e.g. renaming to the current name): only the display name
+		// could differ, so update it in place without touching references.
+		_, err := s.db.Exec("UPDATE instances SET name = ? WHERE id = ?", newName, oldID)
+		return err
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var exists int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM instances WHERE id = ?", oldID).Scan(&exists); err != nil {
+		return err
+	}
+	if exists == 0 {
+		return fmt.Errorf("instance %q not found", oldID)
+	}
+
+	var collision int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM instances WHERE id = ?", newID).Scan(&collision); err != nil {
+		return err
+	}
+	if collision > 0 {
+		return fmt.Errorf("an instance named %q already exists in this directory", newName)
+	}
+
+	if _, err := tx.Exec("UPDATE instances SET id = ?, name = ? WHERE id = ?", newID, newName, oldID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE messages SET to_instance = ? WHERE to_instance = ?", newID, oldID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE messages SET from_instance = ? WHERE from_instance = ?", newID, oldID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE review_sessions SET instance_id = ? WHERE instance_id = ?", newID, oldID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 func (s *SQLiteStore) GetInstances() ([]Instance, error) {
 	rows, err := s.db.Query("SELECT id, directory_id, name, pid, directory, tty, is_leader, is_idle, started_at, last_heartbeat FROM instances ORDER BY started_at DESC")
 	if err != nil {
