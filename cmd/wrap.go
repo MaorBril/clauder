@@ -230,6 +230,16 @@ func sameNames(a, b []string) bool {
 	return true
 }
 
+// sliceContains returns true if slice contains the given element.
+func sliceContains(slice []string, elem string) bool {
+	for _, s := range slice {
+		if s == elem {
+			return true
+		}
+	}
+	return false
+}
+
 func (w *messageWatcher) checkAndInject() {
 	// Check cooldown - don't spam injections
 	sinceLastInject := time.Since(w.lastInjected)
@@ -262,6 +272,19 @@ func (w *messageWatcher) checkAndInject() {
 			name = "primary"
 		}
 		unreadFor = append(unreadFor, name)
+	}
+
+	// Also check for broadcast messages sent to the bare directory ID
+	// (when messages are sent to a directory, not a specific instance).
+	// Only check if w.instanceName is empty (this instance is the primary/directory-default).
+	if w.instanceName == "" {
+		broadcastMsgs, err := w.store.GetMessages(w.directoryID, true) // unread only
+		if err == nil && len(broadcastMsgs) > 0 {
+			// Found broadcast messages for the directory
+			if !sliceContains(unreadFor, "primary") {
+				unreadFor = append(unreadFor, "primary")
+			}
+		}
 	}
 
 	if len(unreadFor) == 0 {
