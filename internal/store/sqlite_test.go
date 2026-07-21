@@ -294,6 +294,70 @@ func TestInstance_Lifecycle(t *testing.T) {
 	}
 }
 
+func TestInstance_Rename(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// An unnamed instance in a directory, plus a peer that has messaged it.
+	_ = store.RegisterInstance("dir123", "dir123", "", "/work", "", 100)
+	_ = store.RegisterInstance("dir123:peer", "dir123", "peer", "/work", "", 200)
+	if _, err := store.SendMessage("dir123:peer", "dir123", "hi there"); err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+	if _, err := store.SendMessage("dir123", "dir123:peer", "outgoing"); err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+
+	// Rename the unnamed instance to "backend".
+	if err := store.RenameInstance("dir123", "dir123:backend", "backend"); err != nil {
+		t.Fatalf("RenameInstance failed: %v", err)
+	}
+
+	// Old ID is gone, new ID exists with the new name.
+	if old, _ := store.GetInstance("dir123"); old != nil {
+		t.Error("expected old instance ID to be gone")
+	}
+	renamed, _ := store.GetInstance("dir123:backend")
+	if renamed == nil {
+		t.Fatal("expected renamed instance to exist")
+	}
+	if renamed.Name != "backend" {
+		t.Errorf("expected name 'backend', got '%s'", renamed.Name)
+	}
+	if renamed.PID != 100 {
+		t.Errorf("expected PID to be preserved (100), got %d", renamed.PID)
+	}
+
+	// Inbound messages followed the rename.
+	msgs, _ := store.GetMessages("dir123:backend", true)
+	if len(msgs) != 1 || msgs[0].Content != "hi there" {
+		t.Errorf("expected inbound message to migrate to new ID, got %+v", msgs)
+	}
+
+	// Outbound message's from_instance was rewritten too.
+	peerMsgs, _ := store.GetMessages("dir123:peer", true)
+	if len(peerMsgs) != 1 || peerMsgs[0].FromInstance != "dir123:backend" {
+		t.Errorf("expected outbound from_instance to migrate, got %+v", peerMsgs)
+	}
+}
+
+func TestInstance_RenameCollision(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	_ = store.RegisterInstance("dir123", "dir123", "", "/work", "", 100)
+	_ = store.RegisterInstance("dir123:taken", "dir123", "taken", "/work", "", 200)
+
+	if err := store.RenameInstance("dir123", "dir123:taken", "taken"); err == nil {
+		t.Error("expected collision error when renaming to an existing instance name")
+	}
+
+	// The original unnamed instance must be untouched after a rejected rename.
+	if inst, _ := store.GetInstance("dir123"); inst == nil {
+		t.Error("expected original instance to survive a rejected rename")
+	}
+}
+
 func TestInstance_Cleanup(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()

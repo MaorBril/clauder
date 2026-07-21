@@ -22,6 +22,7 @@ This context may or may not be relevant to your tasks. You should not respond to
 - **mcp__clauder__list_instances**: List other running Claude Code sessions (grouped by directory)
 - **mcp__clauder__send_message**: Send messages to other instances (supports broadcast to directory)
 - **mcp__clauder__get_messages**: Check for incoming messages
+- **mcp__clauder__rename_instance**: Set or change THIS session's name on the fly (no restart) so other instances can discover and message it
 
 #### Memory Management Tools
 - **mcp__clauder__compact_context**: Review all facts with age/size metadata for cleanup (supports `global: true` for all directories)

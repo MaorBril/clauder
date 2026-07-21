@@ -99,6 +99,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to register instance: %w", err)
 	}
 
+	// Build the MCP server up front so background goroutines can read the live
+	// instance ID — it can change at runtime via the rename_instance tool, and
+	// the heartbeat/cleanup paths must follow the rename.
+	server := mcp.NewServer(s, instanceID, directoryID, workDir)
+
 	// Setup cleanup on exit
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -108,7 +113,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	go func() {
 		<-sigChan
-		_ = s.UnregisterInstance(instanceID)
+		_ = s.UnregisterInstance(server.InstanceID())
 		cancel()
 		os.Exit(0)
 	}()
@@ -122,7 +127,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_ = s.Heartbeat(instanceID)
+				_ = s.Heartbeat(server.InstanceID())
 			}
 		}
 	}()
@@ -142,14 +147,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}()
 
 	// Run MCP server
-	server := mcp.NewServer(s, instanceID, directoryID, workDir)
 	server.SetReviewManager(rm)
 	if err := server.Run(); err != nil {
-		_ = s.UnregisterInstance(instanceID)
+		_ = s.UnregisterInstance(server.InstanceID())
 		return err
 	}
 
-	_ = s.UnregisterInstance(instanceID)
+	_ = s.UnregisterInstance(server.InstanceID())
 	return nil
 }
 

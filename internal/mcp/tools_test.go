@@ -432,6 +432,86 @@ func TestToolListInstances_WithInstances(t *testing.T) {
 	}
 }
 
+// RenameInstance tool tests
+
+func TestToolRenameInstance_Valid(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	// Register this instance under its initial (unnamed-style) ID.
+	_ = server.store.RegisterInstance("test-instance", "test-directory-id", "", "/test/workdir", "", 1)
+
+	result := server.toolRenameInstance(map[string]interface{}{"name": "backend"})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Content[0].Text)
+	}
+
+	// The running server must now report the new ID.
+	if got := server.InstanceID(); got != "test-directory-id:backend" {
+		t.Errorf("expected instance ID 'test-directory-id:backend', got '%s'", got)
+	}
+	// And the store should reflect it.
+	if inst, _ := server.store.GetInstance("test-directory-id:backend"); inst == nil || inst.Name != "backend" {
+		t.Errorf("expected renamed instance in store, got %+v", inst)
+	}
+}
+
+func TestToolRenameInstance_MessagesFollow(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	_ = server.store.RegisterInstance("test-instance", "test-directory-id", "", "/test/workdir", "", 1)
+	_ = server.store.RegisterInstance("peer", "peer-dir", "peer", "/peer", "", 2)
+	_, _ = server.store.SendMessage("peer", "test-instance", "ping")
+
+	if r := server.toolRenameInstance(map[string]interface{}{"name": "backend"}); r.IsError {
+		t.Fatalf("unexpected error: %s", r.Content[0].Text)
+	}
+
+	// get_messages now reads against the new ID and finds the migrated message.
+	result := server.toolGetMessages(map[string]interface{}{})
+	if !strings.Contains(result.Content[0].Text, "ping") {
+		t.Errorf("expected migrated message after rename, got: %s", result.Content[0].Text)
+	}
+}
+
+func TestToolRenameInstance_Empty(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	result := server.toolRenameInstance(map[string]interface{}{"name": "   "})
+	if !result.IsError {
+		t.Error("expected error for empty name")
+	}
+}
+
+func TestToolRenameInstance_Colon(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	result := server.toolRenameInstance(map[string]interface{}{"name": "bad:name"})
+	if !result.IsError {
+		t.Error("expected error for name containing ':'")
+	}
+}
+
+func TestToolRenameInstance_Collision(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	_ = server.store.RegisterInstance("test-instance", "test-directory-id", "", "/test/workdir", "", 1)
+	_ = server.store.RegisterInstance("test-directory-id:taken", "test-directory-id", "taken", "/test/workdir", "", 2)
+
+	result := server.toolRenameInstance(map[string]interface{}{"name": "taken"})
+	if !result.IsError {
+		t.Error("expected error when renaming to a name already in use")
+	}
+	// The server must keep its original identity on failure.
+	if got := server.InstanceID(); got != "test-instance" {
+		t.Errorf("expected instance ID unchanged on failure, got '%s'", got)
+	}
+}
+
 // CompactContext tool tests
 
 func TestToolCompactContext_Empty(t *testing.T) {

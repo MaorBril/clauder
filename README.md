@@ -239,6 +239,18 @@ Each named instance gets a unique ID and can be messaged individually:
 
 Without `--name`, the second instance in the same directory automatically gets a unique suffix to avoid conflicts.
 
+#### Naming a session after it has started
+
+You don't have to decide on a name at launch. If you started a session normally and *later* want it to be addressable (for example, to coordinate with another Claude Code session), just ask Claude to name it — it calls the `rename_instance` MCP tool:
+
+```
+You: name this session backend
+```
+
+This sets the running session's name in place (no restart). Its instance ID becomes `directoryID:backend`, any pending messages follow the rename, and other instances can immediately discover and message it by that name.
+
+> Note: a session started with `clauder wrap --name <x>` keeps its terminal's auto-injection bound to the launch name. The unnamed → named flow above is the common case and works without restarting.
+
 ### MCP Tools
 
 When used as an MCP server, clauder provides these tools:
@@ -252,6 +264,7 @@ When used as an MCP server, clauder provides these tools:
 | `list_instances` | List other running Claude Code sessions (grouped by directory) |
 | `send_message` | Send a message to a specific instance or broadcast to all in a directory |
 | `get_messages` | Check for incoming messages |
+| `rename_instance` | Name (or rename) the current session on the fly, no restart needed |
 
 ## Data Storage
 
