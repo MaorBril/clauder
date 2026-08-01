@@ -18,10 +18,13 @@ const (
 )
 
 var (
-	client   posthog.Client
-	once     sync.Once
-	disabled bool
-	anonID   string
+	client      posthog.Client
+	once        sync.Once
+	disabled    bool
+	anonID      string
+	sessionID   string   // Unique per server session
+	directoryID string   // Current working directory ID
+	instanceName string  // Named instance identifier (if any)
 )
 
 // Init initializes the telemetry client
@@ -55,6 +58,14 @@ func Close() {
 	}
 }
 
+// SetSessionContext sets session-level context for all subsequent events
+// This should be called when the MCP server starts
+func SetSessionContext(sessID, dirID, instName string) {
+	sessionID = sessID
+	directoryID = dirID
+	instanceName = instName
+}
+
 // Track sends an event to PostHog
 func Track(event string, properties map[string]interface{}) {
 	if disabled || client == nil {
@@ -65,6 +76,17 @@ func Track(event string, properties map[string]interface{}) {
 	props.Set("os", runtime.GOOS)
 	props.Set("arch", runtime.GOARCH)
 	props.Set("version", Version)
+
+	// Add session context if available
+	if sessionID != "" {
+		props.Set("session_id", sessionID)
+	}
+	if directoryID != "" {
+		props.Set("directory_id", directoryID)
+	}
+	if instanceName != "" {
+		props.Set("instance_name", instanceName)
+	}
 
 	for k, v := range properties {
 		props.Set(k, v)
@@ -102,6 +124,15 @@ func TrackCommand(command string) {
 func TrackMCPTool(tool string) {
 	Track("mcp_tool", map[string]interface{}{
 		"tool": tool,
+	})
+}
+
+// TrackMCPToolResult tracks an MCP tool result with success/failure
+func TrackMCPToolResult(tool string, success bool, durationMs int64) {
+	Track("mcp_tool_result", map[string]interface{}{
+		"tool":        tool,
+		"success":     success,
+		"duration_ms": durationMs,
 	})
 }
 

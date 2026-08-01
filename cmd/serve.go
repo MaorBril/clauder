@@ -79,6 +79,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Generate instance ID (includes name if provided)
 	instanceID := generateInstanceID(directoryID, name)
 
+	// Generate unique session ID and set telemetry context
+	sessionIDBytes := make([]byte, 8)
+	_, _ = rand.Read(sessionIDBytes)
+	sessionID := hex.EncodeToString(sessionIDBytes)
+	telemetry.SetSessionContext(sessionID, directoryID, name)
+
 	// Use PID-based index ID for Bleve to ensure each process gets its own index
 	// This prevents file locking issues when multiple processes run in the same directory
 	indexID := fmt.Sprintf("%d", os.Getpid())
